@@ -1,9 +1,10 @@
 mod error;
 
+use std::collections::HashMap;
+use std::rc::Rc;
+
 use error::{Error, Result};
 use log::{debug, error, info, trace, warn};
-
-use std::rc::Rc;
 
 use x11rb::connection::Connection;
 use x11rb::protocol::{
@@ -12,29 +13,6 @@ use x11rb::protocol::{
     Event,
 };
 use Window as Wid;
-
-#[derive(Debug)]
-pub enum Command {
-    NoOp,
-
-    Close(Wid),
-    FocusNext,
-    FocusPrev,
-    ShowBorder,
-    HideBorder,
-
-    MapRequest { window: Wid },
-    MapNotify { window: Wid },
-    UnmapNotify { window: Wid },
-    CreateNotify { window: Wid },
-    DestroyNotify { window: Wid },
-
-    MousePress { window: Wid, x: i16, y: i16 },
-    MouseRelease { window: Wid, x: i16, y: i16 },
-    MouseMove,
-}
-
-use std::collections::HashMap;
 
 #[derive(Debug)]
 struct WindowState {
@@ -67,6 +45,50 @@ impl<C: Connection> WinMan<C> {
     }
 
     fn init(&mut self) -> Result<()> {
+        // Become a window manager of the root window.
+        let mask = EventMask::SUBSTRUCTURE_NOTIFY | EventMask::SUBSTRUCTURE_REDIRECT;
+        let aux = ChangeWindowAttributesAux::new().event_mask(mask);
+        self.conn
+            .change_window_attributes(self.root, &aux)?
+            .check()
+            .map_err(|_| Error::WmAlreadyExists)?;
+
+        // Grab keys
+        for (modif, keycode) in self.config.bounded_keys() {
+            self.conn
+                .grab_key(
+                    true,
+                    self.root,
+                    modif,
+                    keycode,
+                    GrabMode::ASYNC,
+                    GrabMode::ASYNC,
+                )?
+                .check()
+                .map_err(|_| Error::KeyAlreadyGrabbed)?;
+        }
+
+        // Grab mouse buttons
+        let event_mask: u32 = (EventMask::BUTTON_PRESS | EventMask::BUTTON_RELEASE).into();
+        self.conn
+            .grab_button(
+                false,
+                self.root,
+                event_mask as u16,
+                GrabMode::SYNC,
+                GrabMode::ASYNC,
+                self.root,
+                x11rb::NONE,
+                ButtonIndex::M1,
+                ModMask::ANY,
+            )?
+            .check()
+            .map_err(|_| Error::ButtonAlreadyGrabbed)?;
+
+        // Receive RROutputChangeNotifyEvent
+        self.conn
+            .randr_select_input(self.root, randr::NotifyMask::OUTPUT_CHANGE)?;
+
         self.refresh_monitor()?;
 
         // List all exising windows
@@ -168,148 +190,45 @@ impl<C: Connection> WinMan<C> {
         Ok(())
     }
 
-    pub fn process(&mut self, cmd: Command) -> Result<()> {
-        trace!("{:?}", cmd);
-        match cmd {
-            Command::NoOp => {}
-
-            // Close focused window
-            Command::Close(wid) => {
-                self.focus_next()?;
-                self.conn.destroy_window(wid)?;
-                self.conn.flush()?;
-            }
-
-            // Change focus to the next
-            Command::FocusNext => {
-                self.focus_next()?;
-                self.refresh_layout_horizontal_split()?;
-            }
-            // Change focus to the previous
-            Command::FocusPrev => {}
-
-            Command::ShowBorder => {
-                self.border_visible = true;
-                self.refresh_layout_horizontal_split()?;
-            }
-            Command::HideBorder => {
-                self.border_visible = false;
-                self.refresh_layout_horizontal_split()?;
-            }
-
-            // Change focus to the next
-            Command::MapRequest { window } => {
-                self.conn.map_window(window)?;
-                self.conn.flush()?;
-            }
-            Command::MapNotify { window } => {
-                self.map_window(window)?;
-
-                self.conn
-                    .set_input_focus(InputFocus::POINTER_ROOT, window, x11rb::CURRENT_TIME)?;
-                self.conn.flush()?;
-            }
-            Command::UnmapNotify { window } => {
-                if self.windows.contains_key(&window) {
-                    self.unmap_window(window)?;
-                }
-            }
-            Command::CreateNotify { window } => {
-                let state = WindowState { mapped: false };
-                self.windows.insert(window, state);
-            }
-            Command::DestroyNotify { window } => {
-                if self.windows.contains_key(&window) {
-                    self.windows.remove(&window);
-                }
-            }
-
-            // Mouse events
-            Command::MousePress { window, .. } => {
-                debug!("set_input_focus");
-                self.conn
-                    .set_input_focus(InputFocus::POINTER_ROOT, window, x11rb::CURRENT_TIME)?;
-                self.conn.flush()?;
-            }
-            Command::MouseRelease { .. } => {}
-            Command::MouseMove => {}
-        }
-        Ok(())
-    }
-}
-
-struct EventHandler<C: Connection> {
-    conn: Rc<C>,
-    config: Rc<Config>,
-}
-
-impl<C: Connection> EventHandler<C> {
-    pub fn new(conn: Rc<C>, config: Rc<Config>, root: Wid) -> Result<Self> {
-        // Become a window manager of the root window.
-        let mask = EventMask::SUBSTRUCTURE_NOTIFY | EventMask::SUBSTRUCTURE_REDIRECT;
-        let aux = ChangeWindowAttributesAux::new().event_mask(mask);
-        conn.change_window_attributes(root, &aux)?
-            .check()
-            .map_err(|_| Error::WmAlreadyExists)?;
-
-        // Grab keys
-        for (modif, keycode) in config.bounded_keys() {
-            conn.grab_key(true, root, modif, keycode, GrabMode::ASYNC, GrabMode::ASYNC)?
-                .check()
-                .map_err(|_| Error::KeyAlreadyGrabbed)?;
-        }
-
-        // Grab mouse buttons
-        let event_mask: u32 = (EventMask::BUTTON_PRESS | EventMask::BUTTON_RELEASE).into();
-        conn.grab_button(
-            false,
-            root,
-            event_mask as u16,
-            GrabMode::SYNC,
-            GrabMode::ASYNC,
-            root,
-            x11rb::NONE,
-            ButtonIndex::M1,
-            ModMask::ANY,
-        )?
-        .check()
-        .map_err(|_| Error::ButtonAlreadyGrabbed)?;
-
-        // Receive RROutputChangeNotifyEvent
-        conn.randr_select_input(root, randr::NotifyMask::OUTPUT_CHANGE)?;
-
-        Ok(Self { conn, config })
-    }
-
-    pub fn handle(&mut self, event: Event) -> Result<Command> {
+    pub fn handle_event(&mut self, event: Event) -> Result<()> {
+        trace!("event: {:?}", event);
         match event {
             Event::KeyPress(e) => {
                 let op = self.config.get_keybind(e.state, e.detail);
                 let op = op.as_deref();
                 match op {
-                    Some("super-press") => Ok(Command::ShowBorder),
-                    Some("exit") => Err(Error::Quit),
+                    Some("super-press") => {
+                        self.border_visible = true;
+                        self.refresh_layout_horizontal_split()?;
+                    }
+                    Some("exit") => return Err(Error::Quit),
                     Some("close") => {
                         let focused = self.conn.get_input_focus()?.reply()?.focus;
-                        Ok(Command::Close(focused))
+                        self.focus_next()?;
+                        self.conn.destroy_window(focused)?;
+                        self.conn.flush()?;
                     }
-                    Some("focus-next") => Ok(Command::FocusNext),
-                    Some("focus-prev") => Ok(Command::FocusPrev),
+                    Some("focus-next") => {
+                        self.focus_next()?;
+                        self.refresh_layout_horizontal_split()?;
+                    }
+                    Some("focus-prev") => {}
                     Some("open-launcher") => {
                         let _ = std::process::Command::new("/usr/bin/dmenu_run").spawn();
-                        Ok(Command::NoOp)
                     }
                     Some(_) | None => {
                         warn!("unhandled KeyPress event");
-                        Ok(Command::NoOp)
                     }
                 }
             }
             Event::KeyRelease(e) => {
                 let op = self.config.get_keybind(e.state, e.detail);
                 match op.as_deref() {
-                    Some("super-release") => Ok(Command::HideBorder),
-                    Some(_) | None => Ok(Command::NoOp),
+                    Some("super-release") => {
+                        self.border_visible = false;
+                        self.refresh_layout_horizontal_split()?;
+                    }
+                    Some(_) | None => {}
                 }
             }
 
@@ -317,49 +236,55 @@ impl<C: Connection> EventHandler<C> {
                 self.conn
                     .allow_events(Allow::REPLAY_POINTER, x11rb::CURRENT_TIME)?
                     .check()?;
-                if e.child == x11rb::NONE {
-                    Ok(Command::NoOp)
-                } else {
-                    Ok(Command::MousePress {
-                        window: e.child,
-                        x: e.event_x,
-                        y: e.event_y,
-                    })
+                if e.child != x11rb::NONE {
+                    debug!("set_input_focus");
+                    self.conn.set_input_focus(
+                        InputFocus::POINTER_ROOT,
+                        e.child,
+                        x11rb::CURRENT_TIME,
+                    )?;
+                    self.conn.flush()?;
                 }
             }
-            Event::ButtonRelease(_) => Ok(Command::NoOp),
+            Event::ButtonRelease(_) => {}
 
-            Event::MapRequest(req) => Ok(Command::MapRequest { window: req.window }),
+            Event::MapRequest(req) => {
+                self.conn.map_window(req.window)?;
+                self.conn.flush()?;
+            }
             Event::MapNotify(notif) => {
-                if notif.override_redirect {
-                    Ok(Command::NoOp)
-                } else {
-                    Ok(Command::MapNotify {
-                        window: notif.window,
-                    })
+                if !notif.override_redirect {
+                    self.map_window(notif.window)?;
+                    self.conn.set_input_focus(
+                        InputFocus::POINTER_ROOT,
+                        notif.window,
+                        x11rb::CURRENT_TIME,
+                    )?;
+                    self.conn.flush()?;
                 }
             }
-            Event::UnmapNotify(notif) => Ok(Command::UnmapNotify {
-                window: notif.window,
-            }),
+            Event::UnmapNotify(notif) => {
+                if self.windows.contains_key(&notif.window) {
+                    self.unmap_window(notif.window)?;
+                }
+            }
             Event::CreateNotify(notif) => {
-                if notif.override_redirect {
-                    Ok(Command::NoOp)
-                } else {
-                    Ok(Command::CreateNotify {
-                        window: notif.window,
-                    })
+                if !notif.override_redirect {
+                    let state = WindowState { mapped: false };
+                    self.windows.insert(notif.window, state);
                 }
             }
-            Event::DestroyNotify(notif) => Ok(Command::DestroyNotify {
-                window: notif.window,
-            }),
+            Event::DestroyNotify(notif) => {
+                if self.windows.contains_key(&notif.window) {
+                    self.windows.remove(&notif.window);
+                }
+            }
 
             event => {
                 debug!("unhandled event: {:?}", event);
-                Ok(Command::NoOp)
             }
         }
+        Ok(())
     }
 }
 
@@ -426,7 +351,7 @@ impl Default for Config {
     }
 }
 
-fn start<S>(display_name: S) -> Result<()>
+pub fn start<S>(display_name: S) -> Result<()>
 where
     S: Into<Option<&'static str>>,
 {
@@ -441,13 +366,10 @@ where
     let root = screen.root;
     debug!("root = {}", root);
 
-    let mut event_handler = EventHandler::new(conn.clone(), config.clone(), root)?;
     let mut wm = WinMan::new(conn.clone(), config, root)?;
-
     loop {
         let x11_event = conn.wait_for_event()?;
-        let cmd = event_handler.handle(x11_event)?;
-        wm.process(cmd)?;
+        wm.handle_event(x11_event)?;
     }
 }
 
