@@ -54,7 +54,7 @@ impl<C: Connection> WinMan<C> {
             .map_err(|_| Error::WmAlreadyExists)?;
 
         // Grab keys
-        for (modif, keycode) in self.config.bounded_keys() {
+        for (_, modif, keycode) in self.config.bounded_keys() {
             self.conn
                 .grab_key(
                     true,
@@ -190,45 +190,57 @@ impl<C: Connection> WinMan<C> {
         Ok(())
     }
 
+    fn process_command(&mut self, cmd: &str) -> Result<()> {
+        match cmd {
+            "show-border" => {
+                self.border_visible = true;
+                self.refresh_layout_horizontal_split()?;
+            }
+            "hide-border" => {
+                self.border_visible = false;
+                self.refresh_layout_horizontal_split()?;
+            }
+            "exit" => return Err(Error::Quit),
+            "close" => {
+                let focused = self.conn.get_input_focus()?.reply()?.focus;
+                self.focus_next()?;
+                self.conn.destroy_window(focused)?;
+                self.conn.flush()?;
+            }
+            "focus-next" => {
+                self.focus_next()?;
+                self.refresh_layout_horizontal_split()?;
+            }
+            "focus-prev" => {
+                warn!("not yet implemented");
+            }
+            "open-launcher" => {
+                let _ = std::process::Command::new(self.config.launcher.as_str()).spawn();
+            }
+            _ => {
+                warn!("unhandled KeyPress event");
+            }
+        }
+        Ok(())
+    }
+
     pub fn handle_event(&mut self, event: Event) -> Result<()> {
         trace!("event: {:?}", event);
         match event {
             Event::KeyPress(e) => {
-                let op = self.config.get_keybind(e.state, e.detail);
-                let op = op.as_deref();
-                match op {
-                    Some("super-press") => {
-                        self.border_visible = true;
-                        self.refresh_layout_horizontal_split()?;
-                    }
-                    Some("exit") => return Err(Error::Quit),
-                    Some("close") => {
-                        let focused = self.conn.get_input_focus()?.reply()?.focus;
-                        self.focus_next()?;
-                        self.conn.destroy_window(focused)?;
-                        self.conn.flush()?;
-                    }
-                    Some("focus-next") => {
-                        self.focus_next()?;
-                        self.refresh_layout_horizontal_split()?;
-                    }
-                    Some("focus-prev") => {}
-                    Some("open-launcher") => {
-                        let _ = std::process::Command::new("/usr/bin/dmenu_run").spawn();
-                    }
-                    Some(_) | None => {
-                        warn!("unhandled KeyPress event");
-                    }
+                if let Some(cmd) = self
+                    .config
+                    .get_keybind(KeybindAction::Press, e.state, e.detail)
+                {
+                    self.process_command(&cmd)?;
                 }
             }
             Event::KeyRelease(e) => {
-                let op = self.config.get_keybind(e.state, e.detail);
-                match op.as_deref() {
-                    Some("super-release") => {
-                        self.border_visible = false;
-                        self.refresh_layout_horizontal_split()?;
-                    }
-                    Some(_) | None => {}
+                if let Some(cmd) =
+                    self.config
+                        .get_keybind(KeybindAction::Release, e.state, e.detail)
+                {
+                    self.process_command(&cmd)?;
                 }
             }
 
@@ -297,32 +309,39 @@ enum KeyCode {
     Super = 133,
 }
 
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+pub enum KeybindAction {
+    Press,
+    Release,
+}
+
 use std::cell::RefCell;
 
 #[derive(Debug)]
 pub struct Config {
-    keybind: RefCell<HashMap<(u16, u8), String>>,
+    keybind: RefCell<HashMap<(KeybindAction, u16, u8), String>>,
+    launcher: String,
 }
 
 impl Config {
-    pub fn add_keybind<S>(&self, modifier: u16, keycode: u8, op: S)
+    pub fn add_keybind<S>(&self, on: KeybindAction, modifier: u16, keycode: u8, op: S)
     where
         S: Into<String>,
     {
         let mut keybind = self.keybind.borrow_mut();
-        keybind.insert((modifier, keycode), op.into());
+        keybind.insert((on, modifier, keycode), op.into());
     }
 
-    pub fn get_keybind(&self, modifier: u16, keycode: u8) -> Option<String> {
+    pub fn get_keybind(&self, on: KeybindAction, modifier: u16, keycode: u8) -> Option<String> {
         let keybind = self.keybind.borrow();
-        keybind.get(&(modifier, keycode)).cloned()
+        keybind.get(&(on, modifier, keycode)).cloned()
     }
 
-    pub fn bounded_keys(&self) -> Vec<(u16, u8)> {
+    pub fn bounded_keys(&self) -> Vec<(KeybindAction, u16, u8)> {
         let keybind = self.keybind.borrow();
         let mut keys = Vec::new();
-        for &(m, c) in keybind.keys() {
-            keys.push((m, c));
+        for &(on, m, c) in keybind.keys() {
+            keys.push((on, m, c));
         }
         keys
     }
@@ -332,19 +351,30 @@ impl Default for Config {
     fn default() -> Self {
         let config = Config {
             keybind: Default::default(),
+            launcher: "/usr/bin/dmenu_run".to_owned(),
         };
 
         // Default keybind
         {
             let win = ModMask::M4.into();
             let win_shift = (ModMask::M4 | ModMask::SHIFT).into();
-            config.add_keybind(win, KeyCode::Tab as u8, "focus-next");
-            config.add_keybind(win_shift, KeyCode::Tab as u8, "focus-prev");
-            config.add_keybind(win_shift, KeyCode::Q as u8, "exit");
-            config.add_keybind(win, KeyCode::C as u8, "close");
-            config.add_keybind(0, KeyCode::Super as u8, "super-press");
-            config.add_keybind(win, KeyCode::Super as u8, "super-release");
-            config.add_keybind(win, KeyCode::P as u8, "open-launcher");
+            config.add_keybind(KeybindAction::Press, win, KeyCode::Tab as u8, "focus-next");
+            config.add_keybind(
+                KeybindAction::Press,
+                win_shift,
+                KeyCode::Tab as u8,
+                "focus-prev",
+            );
+            config.add_keybind(KeybindAction::Press, win_shift, KeyCode::Q as u8, "exit");
+            config.add_keybind(KeybindAction::Press, win, KeyCode::C as u8, "close");
+            config.add_keybind(KeybindAction::Press, 0, KeyCode::Super as u8, "show-border");
+            config.add_keybind(
+                KeybindAction::Release,
+                win,
+                KeyCode::Super as u8,
+                "hide-border",
+            );
+            config.add_keybind(KeybindAction::Press, win, KeyCode::P as u8, "open-launcher");
         }
 
         config
