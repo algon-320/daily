@@ -17,7 +17,21 @@ $ Xephyr -screen 960x540 :2  # open a virtual display
 $ DISPLAY=:2 cargo run --release
 ```
 
-## Install
+## Keybindings
+
+|keys|command|
+|---------------|-------|
+|`Super`        |Show window border while pressing the key|
+|`Super` + `P`  |Open app launcher (`/usr/bin/dmenu_run` as default)|
+|`Super` + `Tab`|Focus the next window|
+|`Super` + `C`  |Close the focused window|
+|`Super` + `Shift` + `Q`  |Quit|
+
+## Layout Strategies
+
+- Horizontally tiled
+
+## Installation
 
 ```
 $ cargo install --path .
