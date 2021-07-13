@@ -15,6 +15,91 @@ use x11rb::protocol::{
 use Window as Wid;
 
 #[derive(Debug)]
+pub enum HandleResult {
+    Consumed,
+    Ignored,
+}
+
+pub trait EventHandler {
+    fn handle_event(&mut self, event: Event) -> Result<HandleResult>;
+}
+
+macro_rules! event_handler_ignore {
+    ($method_name:ident, $event_type:ty) => {
+        fn $method_name(&mut self, _: $event_type) -> Result<HandleResult> {
+            Ok(HandleResult::Ignored)
+        }
+    };
+}
+
+pub trait EventHandlerMethods {
+    event_handler_ignore!(on_key_press, KeyPressEvent);
+    event_handler_ignore!(on_key_release, KeyReleaseEvent);
+    event_handler_ignore!(on_button_press, ButtonPressEvent);
+    event_handler_ignore!(on_button_release, ButtonReleaseEvent);
+    event_handler_ignore!(on_map_request, MapRequestEvent);
+    event_handler_ignore!(on_map_notify, MapNotifyEvent);
+    event_handler_ignore!(on_unmap_notify, UnmapNotifyEvent);
+    event_handler_ignore!(on_create_notify, CreateNotifyEvent);
+    event_handler_ignore!(on_destroy_notify, DestroyNotifyEvent);
+}
+
+impl<T: EventHandlerMethods> EventHandler for T {
+    fn handle_event(&mut self, event: Event) -> Result<HandleResult> {
+        match event {
+            Event::KeyPress(e) => self.on_key_press(e),
+            Event::KeyRelease(e) => self.on_key_release(e),
+            Event::ButtonPress(e) => self.on_button_press(e),
+            Event::ButtonRelease(e) => self.on_button_release(e),
+            Event::MapRequest(e) => self.on_map_request(e),
+            Event::MapNotify(e) => self.on_map_notify(e),
+            Event::UnmapNotify(e) => self.on_unmap_notify(e),
+            Event::CreateNotify(e) => self.on_create_notify(e),
+            Event::DestroyNotify(e) => self.on_destroy_notify(e),
+            e => {
+                warn!("unhandled event: {:?}", e);
+                Ok(HandleResult::Ignored)
+            }
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct EventRouter {
+    list: Vec<Box<dyn EventHandler>>,
+}
+impl EventRouter {
+    pub fn add_handler(&mut self, h: Box<dyn EventHandler>) {
+        self.list.push(h);
+    }
+}
+impl EventHandler for EventRouter {
+    fn handle_event(&mut self, event: Event) -> Result<HandleResult> {
+        trace!("event: {:?}", event);
+        for h in self.list.iter_mut() {
+            match h.handle_event(event.clone()) {
+                Ok(HandleResult::Ignored) => {
+                    continue;
+                }
+                Ok(HandleResult::Consumed) => {
+                    return Ok(HandleResult::Consumed);
+                }
+                err => return err,
+            }
+        }
+        Ok(HandleResult::Ignored)
+    }
+}
+
+impl std::fmt::Debug for EventRouter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "EventRouter {{...}}")
+    }
+}
+
+use std::sync::{Arc, Mutex};
+
+#[derive(Debug)]
 struct WindowState {
     mapped: bool,
 }
@@ -24,17 +109,24 @@ struct WinMan<C: Connection> {
     conn: Rc<C>,
     config: Rc<Config>,
     root: Wid,
+    event_router: Arc<Mutex<EventRouter>>,
     windows: HashMap<Wid, WindowState>,
     monitor_size: (u16, u16),
     border_visible: bool,
 }
 
 impl<C: Connection> WinMan<C> {
-    pub fn new(conn: Rc<C>, config: Rc<Config>, root: Wid) -> Result<Self> {
+    pub fn new(
+        conn: Rc<C>,
+        config: Rc<Config>,
+        root: Wid,
+        event_router: Arc<Mutex<EventRouter>>,
+    ) -> Result<Self> {
         let mut wm = Self {
             conn,
             config,
             root,
+            event_router,
             windows: HashMap::new(),
             monitor_size: (0, 0),
             border_visible: false,
@@ -220,80 +312,95 @@ impl<C: Connection> WinMan<C> {
         }
         Ok(())
     }
+}
 
-    pub fn handle_event(&mut self, event: Event) -> Result<()> {
-        trace!("event: {:?}", event);
-        match event {
-            Event::KeyPress(e) => {
-                if let Some(cmd) = self
-                    .config
-                    .get_keybind(KeybindAction::Press, e.state, e.detail)
-                {
-                    self.process_command(cmd)?;
-                }
-            }
-            Event::KeyRelease(e) => {
-                if let Some(cmd) =
-                    self.config
-                        .get_keybind(KeybindAction::Release, e.state, e.detail)
-                {
-                    self.process_command(cmd)?;
-                }
-            }
-
-            Event::ButtonPress(e) => {
-                self.conn
-                    .allow_events(Allow::REPLAY_POINTER, x11rb::CURRENT_TIME)?
-                    .check()?;
-                if e.child != x11rb::NONE {
-                    debug!("set_input_focus");
-                    self.conn.set_input_focus(
-                        InputFocus::POINTER_ROOT,
-                        e.child,
-                        x11rb::CURRENT_TIME,
-                    )?;
-                    self.conn.flush()?;
-                }
-            }
-            Event::ButtonRelease(_) => {}
-
-            Event::MapRequest(req) => {
-                self.conn.map_window(req.window)?;
-                self.conn.flush()?;
-            }
-            Event::MapNotify(notif) => {
-                if !notif.override_redirect {
-                    self.map_window(notif.window)?;
-                    self.conn.set_input_focus(
-                        InputFocus::POINTER_ROOT,
-                        notif.window,
-                        x11rb::CURRENT_TIME,
-                    )?;
-                    self.conn.flush()?;
-                }
-            }
-            Event::UnmapNotify(notif) => {
-                if self.windows.contains_key(&notif.window) {
-                    self.unmap_window(notif.window)?;
-                }
-            }
-            Event::CreateNotify(notif) => {
-                if !notif.override_redirect {
-                    let state = WindowState { mapped: false };
-                    self.windows.insert(notif.window, state);
-                }
-            }
-            Event::DestroyNotify(notif) => {
-                if self.windows.contains_key(&notif.window) {
-                    self.windows.remove(&notif.window);
-                }
-            }
-
-            event => {
-                debug!("unhandled event: {:?}", event);
-            }
+impl<C: Connection> EventHandlerMethods for WinMan<C> {
+    fn on_key_press(&mut self, e: KeyPressEvent) -> Result<HandleResult> {
+        if let Some(cmd) = self
+            .config
+            .get_keybind(KeybindAction::Press, e.state, e.detail)
+        {
+            debug!("on_key_press: cmd = {:?}", cmd);
+            self.process_command(cmd)?;
+            Ok(HandleResult::Consumed)
+        } else {
+            Ok(HandleResult::Ignored)
         }
-        Ok(())
+    }
+
+    fn on_key_release(&mut self, e: KeyReleaseEvent) -> Result<HandleResult> {
+        if let Some(cmd) = self
+            .config
+            .get_keybind(KeybindAction::Release, e.state, e.detail)
+        {
+            debug!("on_key_release: cmd = {:?}", cmd);
+            self.process_command(cmd)?;
+            Ok(HandleResult::Consumed)
+        } else {
+            Ok(HandleResult::Ignored)
+        }
+    }
+
+    fn on_button_press(&mut self, e: ButtonPressEvent) -> Result<HandleResult> {
+        self.conn
+            .allow_events(Allow::REPLAY_POINTER, x11rb::CURRENT_TIME)?
+            .check()?;
+        if e.child != x11rb::NONE {
+            debug!("set_input_focus");
+            self.conn
+                .set_input_focus(InputFocus::POINTER_ROOT, e.child, x11rb::CURRENT_TIME)?;
+            self.conn.flush()?;
+            Ok(HandleResult::Consumed)
+        } else {
+            Ok(HandleResult::Ignored)
+        }
+    }
+
+    fn on_map_request(&mut self, req: MapRequestEvent) -> Result<HandleResult> {
+        self.conn.map_window(req.window)?;
+        self.conn.flush()?;
+        Ok(HandleResult::Consumed)
+    }
+
+    fn on_map_notify(&mut self, notif: MapNotifyEvent) -> Result<HandleResult> {
+        if !notif.override_redirect {
+            self.map_window(notif.window)?;
+            self.conn.set_input_focus(
+                InputFocus::POINTER_ROOT,
+                notif.window,
+                x11rb::CURRENT_TIME,
+            )?;
+            self.conn.flush()?;
+            Ok(HandleResult::Consumed)
+        } else {
+            Ok(HandleResult::Ignored)
+        }
+    }
+
+    fn on_unmap_notify(&mut self, notif: UnmapNotifyEvent) -> Result<HandleResult> {
+        if self.windows.contains_key(&notif.window) {
+            self.unmap_window(notif.window)?;
+            Ok(HandleResult::Consumed)
+        } else {
+            Ok(HandleResult::Ignored)
+        }
+    }
+    fn on_create_notify(&mut self, notif: CreateNotifyEvent) -> Result<HandleResult> {
+        if !notif.override_redirect {
+            let state = WindowState { mapped: false };
+            self.windows.insert(notif.window, state);
+            Ok(HandleResult::Consumed)
+        } else {
+            Ok(HandleResult::Ignored)
+        }
+    }
+    fn on_destroy_notify(&mut self, notif: DestroyNotifyEvent) -> Result<HandleResult> {
+        if self.windows.contains_key(&notif.window) {
+            self.windows.remove(&notif.window);
+            Ok(HandleResult::Consumed)
+        } else {
+            Ok(HandleResult::Ignored)
+        }
     }
 }
 
@@ -421,10 +528,17 @@ where
     let root = screen.root;
     debug!("root = {}", root);
 
-    let mut wm = WinMan::new(conn.clone(), config, root)?;
+    let router = Arc::new(Mutex::new(EventRouter::default()));
+    {
+        let wm = WinMan::new(conn.clone(), config, root, router.clone())?;
+        let mut router = router.lock().unwrap();
+        router.add_handler(Box::new(wm));
+    }
+
     loop {
         let x11_event = conn.wait_for_event()?;
-        wm.handle_event(x11_event)?;
+        let mut router = router.lock().unwrap();
+        router.handle_event(x11_event.clone())?;
     }
 }
 
