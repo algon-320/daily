@@ -134,20 +134,21 @@ impl<C: Connection> WinMan<C> {
 
         for (&wid, _) in self.windows.iter().filter(|(_, state)| state.mapped) {
             let show_border = self.border_visible && wid == focused;
-            let mut conf = ConfigureWindowAux::new().x(x).y(0);
-            if show_border {
-                const BORDER_WIDTH: u32 = 2;
-                conf = conf
-                    .border_width(BORDER_WIDTH)
-                    .width(w - BORDER_WIDTH * 2)
-                    .height(h - BORDER_WIDTH * 2);
-            } else {
-                conf = conf.border_width(0).width(w).height(h)
-            }
+
+            const BORDER_WIDTH: u32 = 1;
+            let conf = ConfigureWindowAux::new()
+                .x(x)
+                .y(0)
+                .border_width(BORDER_WIDTH)
+                .width(w - BORDER_WIDTH * 2)
+                .height(h - BORDER_WIDTH * 2);
             self.conn.configure_window(wid, &conf)?;
 
             if show_border {
                 let attr = ChangeWindowAttributesAux::new().border_pixel(0xFF8882);
+                self.conn.change_window_attributes(wid, &attr)?;
+            } else {
+                let attr = ChangeWindowAttributesAux::new().border_pixel(0x505050);
                 self.conn.change_window_attributes(wid, &attr)?;
             }
 
