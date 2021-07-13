@@ -3,10 +3,10 @@ use log::{trace, warn};
 
 use x11rb::protocol::{xproto::*, Event};
 
-#[derive(Debug)]
 pub enum HandleResult {
     Consumed,
     Ignored,
+    NewHandler(Box<dyn EventHandler>),
 }
 
 pub trait EventHandler {
@@ -74,7 +74,11 @@ impl EventHandler for EventRouter {
                 Ok(HandleResult::Consumed) => {
                     return Ok(HandleResult::Consumed);
                 }
-                err => return err,
+                Ok(HandleResult::NewHandler(new_handler)) => {
+                    self.list.push(new_handler);
+                    return Ok(HandleResult::Consumed);
+                }
+                Err(err) => return Err(err),
             }
         }
         Ok(HandleResult::Ignored)

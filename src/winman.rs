@@ -1,10 +1,9 @@
 use log::{debug, info, trace, warn};
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
 
 use crate::error::{Error, Result};
-use crate::event::{EventHandlerMethods, EventRouter, HandleResult};
+use crate::event::{EventHandlerMethods, HandleResult};
 use crate::{Command, Config, KeybindAction};
 
 use x11rb::connection::Connection;
@@ -24,24 +23,17 @@ pub struct WinMan<C: Connection> {
     conn: Rc<C>,
     config: Rc<Config>,
     root: Wid,
-    event_router: Arc<Mutex<EventRouter>>,
     windows: HashMap<Wid, WindowState>,
     monitor_size: (u16, u16),
     border_visible: bool,
 }
 
 impl<C: Connection> WinMan<C> {
-    pub fn new(
-        conn: Rc<C>,
-        config: Rc<Config>,
-        root: Wid,
-        event_router: Arc<Mutex<EventRouter>>,
-    ) -> Result<Self> {
+    pub fn new(conn: Rc<C>, config: Rc<Config>, root: Wid) -> Result<Self> {
         let mut wm = Self {
             conn,
             config,
             root,
-            event_router,
             windows: HashMap::new(),
             monitor_size: (0, 0),
             border_visible: false,

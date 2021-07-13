@@ -5,7 +5,6 @@ mod winman;
 use log::{debug, error, info};
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
 
 use error::{Error, Result};
 use event::{EventHandler, EventRouter};
@@ -138,16 +137,12 @@ where
     let root = screen.root;
     debug!("root = {}", root);
 
-    let router = Arc::new(Mutex::new(EventRouter::default()));
-    {
-        let wm = WinMan::new(conn.clone(), config, root, router.clone())?;
-        let mut router = router.lock().unwrap();
-        router.add_handler(Box::new(wm));
-    }
+    let mut router = EventRouter::default();
+    let wm = WinMan::new(conn.clone(), config, root)?;
+    router.add_handler(Box::new(wm));
 
     loop {
         let x11_event = conn.wait_for_event()?;
-        let mut router = router.lock().unwrap();
         router.handle_event(x11_event.clone())?;
     }
 }
