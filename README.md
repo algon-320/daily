@@ -8,7 +8,7 @@ Try Daily with a dedicated X server:
 ```
 $ # open a virtual console (e.g. by hitting Ctrl + Alt + F5)
 $ cargo build --release
-$ startx target/release/daily
+$ startx $PWD/target/release/daily
 ```
 
 Or, thanks to Xephyr you can try Daily under another Window Manager: 
