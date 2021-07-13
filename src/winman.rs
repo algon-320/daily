@@ -2,9 +2,10 @@ use log::{debug, info, trace, warn};
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::event::{EventHandlerMethods, HandleResult};
-use crate::{Command, Config, KeybindAction};
+use crate::{Command, KeybindAction};
 
 use x11rb::connection::Connection;
 use x11rb::protocol::{
