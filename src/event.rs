@@ -58,11 +58,13 @@ impl<T: EventHandlerMethods> EventHandler for T {
 pub struct EventRouter {
     list: Vec<Box<dyn EventHandler>>,
 }
+
 impl EventRouter {
     pub fn add_handler(&mut self, h: Box<dyn EventHandler>) {
         self.list.push(h);
     }
 }
+
 impl EventHandler for EventRouter {
     fn handle_event(&mut self, event: Event) -> Result<HandleResult> {
         trace!("event: {:?}", event);

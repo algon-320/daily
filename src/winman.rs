@@ -292,6 +292,7 @@ impl<C: Connection> EventHandlerMethods for WinMan<C> {
             Ok(HandleResult::Ignored)
         }
     }
+
     fn on_create_notify(&mut self, notif: CreateNotifyEvent) -> Result<HandleResult> {
         if !notif.override_redirect {
             let state = WindowState { mapped: false };
@@ -301,6 +302,7 @@ impl<C: Connection> EventHandlerMethods for WinMan<C> {
             Ok(HandleResult::Ignored)
         }
     }
+
     fn on_destroy_notify(&mut self, notif: DestroyNotifyEvent) -> Result<HandleResult> {
         if self.windows.contains_key(&notif.window) {
             self.windows.remove(&notif.window);
