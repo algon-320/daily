@@ -1,7 +1,6 @@
 use crate::error::{Error, Result};
 use crate::{Command, KeybindAction};
 use log::info;
-use serde::Deserialize;
 use std::collections::HashMap;
 use x11rb::protocol::xproto::ModMask;
 
@@ -11,7 +10,10 @@ enum KeyCode {
     Q = 24,
     C = 54,
     P = 33,
-    Super = 133,
+    SuperL = 133,
+    SuperR = 134,
+    AltL = 64,
+    AltR = 108,
 }
 
 const DEFAULT: &str = r#"
@@ -27,47 +29,60 @@ keybind = [
 ]
 "#;
 
-#[derive(Debug, Deserialize)]
-enum Modifier {
-    Super,
-    Shift,
-}
+mod parse {
+    use crate::{Command, KeybindAction};
+    use serde::Deserialize;
+    use std::collections::HashMap;
+    use x11rb::protocol::xproto::ModMask;
 
-impl From<Modifier> for u16 {
-    fn from(m: Modifier) -> u16 {
-        match m {
-            Modifier::Super => ModMask::M4.into(),
-            Modifier::Shift => ModMask::SHIFT.into(),
+    use super::Config;
+
+    #[derive(Debug, Deserialize)]
+    enum Modifier {
+        Shift,
+        Control,
+        Alt,
+        Super,
+    }
+
+    impl From<Modifier> for u16 {
+        fn from(m: Modifier) -> u16 {
+            match m {
+                Modifier::Shift => ModMask::SHIFT.into(),
+                Modifier::Control => ModMask::CONTROL.into(),
+                Modifier::Alt => ModMask::M1.into(),
+                Modifier::Super => ModMask::M4.into(),
+            }
         }
     }
-}
 
-#[derive(Debug, Deserialize)]
-struct KeyBind {
-    action: KeybindAction,
-    r#mod: Vec<Modifier>,
-    key: u8,
-    command: Command,
-}
+    #[derive(Debug, Deserialize)]
+    struct KeyBind {
+        action: KeybindAction,
+        r#mod: Vec<Modifier>,
+        key: u8,
+        command: Command,
+    }
 
-#[derive(Debug, Deserialize)]
-struct ConfigTomlRepr {
-    keybind: Vec<KeyBind>,
-    launcher: String,
-}
+    #[derive(Debug, Deserialize)]
+    pub struct ConfigTomlRepr {
+        keybind: Vec<KeyBind>,
+        launcher: String,
+    }
 
-impl From<ConfigTomlRepr> for Config {
-    fn from(toml_repr: ConfigTomlRepr) -> Self {
-        let mut keybind = HashMap::new();
-        for kb in toml_repr.keybind {
-            let mut modmask: u16 = 0;
-            for m in kb.r#mod {
-                modmask |= Into::<u16>::into(m);
+    impl From<ConfigTomlRepr> for Config {
+        fn from(toml_repr: ConfigTomlRepr) -> Self {
+            let mut keybind = HashMap::new();
+            for kb in toml_repr.keybind {
+                let mut modmask: u16 = 0;
+                for m in kb.r#mod {
+                    modmask |= Into::<u16>::into(m);
+                }
+                keybind.insert((kb.action, modmask, kb.key), kb.command);
             }
-            keybind.insert((kb.action, modmask, kb.key), kb.command);
+            let launcher = toml_repr.launcher;
+            Config { keybind, launcher }
         }
-        let launcher = toml_repr.launcher;
-        Config { keybind, launcher }
     }
 }
 
@@ -86,7 +101,7 @@ impl Config {
                 let config_str = String::from_utf8(bytes).map_err(|_| Error::InvalidConfig {
                     reason: "ill-formed UTF-8".to_owned(),
                 })?;
-                let toml_repr: ConfigTomlRepr =
+                let toml_repr: parse::ConfigTomlRepr =
                     toml::from_str(&config_str).map_err(|e| Error::InvalidConfig {
                         reason: format!("{}", e),
                     })?;
@@ -97,23 +112,22 @@ impl Config {
         Ok(config)
     }
 
-    pub fn get_keybind(&self, on: KeybindAction, modifier: u16, keycode: u8) -> Option<Command> {
+    pub fn keybind_match(&self, on: KeybindAction, modifier: u16, keycode: u8) -> Option<Command> {
         self.keybind.get(&(on, modifier, keycode)).cloned()
     }
 
-    pub fn bounded_keys(&self) -> Vec<(KeybindAction, u16, u8)> {
-        let mut keys = Vec::new();
-        for &(on, m, c) in self.keybind.keys() {
-            keys.push((on, m, c));
-        }
-        keys
+    pub fn keybind_iter(
+        &self,
+    ) -> impl Iterator<Item = (&'_ (KeybindAction, u16, u8), &'_ Command)> {
+        self.keybind.iter()
     }
 }
 
 impl Default for Config {
     fn default() -> Self {
         info!("default config is used");
-        let toml_repr: ConfigTomlRepr = toml::from_str(DEFAULT).expect("Default config is wrong");
+        let toml_repr: parse::ConfigTomlRepr =
+            toml::from_str(DEFAULT).expect("Default config is wrong");
         toml_repr.into()
     }
 }

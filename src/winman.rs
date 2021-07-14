@@ -54,7 +54,7 @@ impl<C: Connection> WinMan<C> {
             .map_err(|_| Error::WmAlreadyExists)?;
 
         // Grab keys
-        for (_, modif, keycode) in self.config.bounded_keys() {
+        for (&(_, modif, keycode), _) in self.config.keybind_iter() {
             self.conn
                 .grab_key(
                     true,
@@ -227,7 +227,7 @@ impl<C: Connection> EventHandlerMethods for WinMan<C> {
     fn on_key_press(&mut self, e: KeyPressEvent) -> Result<HandleResult> {
         if let Some(cmd) = self
             .config
-            .get_keybind(KeybindAction::Press, e.state, e.detail)
+            .keybind_match(KeybindAction::Press, e.state, e.detail)
         {
             debug!("on_key_press: cmd = {:?}", cmd);
             self.process_command(cmd)?;
@@ -240,7 +240,7 @@ impl<C: Connection> EventHandlerMethods for WinMan<C> {
     fn on_key_release(&mut self, e: KeyReleaseEvent) -> Result<HandleResult> {
         if let Some(cmd) = self
             .config
-            .get_keybind(KeybindAction::Release, e.state, e.detail)
+            .keybind_match(KeybindAction::Release, e.state, e.detail)
         {
             debug!("on_key_release: cmd = {:?}", cmd);
             self.process_command(cmd)?;
