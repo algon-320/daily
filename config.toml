@@ -1,5 +1,4 @@
 launcher = "/usr/bin/dmenu_run"
-
 keybind = [
     { action = "Press",   mod = ["Super", "Shift"], key = 24,  command = "Quit"},
     { action = "Press",   mod = ["Super"],          key = 54,  command = "Close"},

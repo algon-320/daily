@@ -193,7 +193,7 @@ impl<C: Connection> WinMan<C> {
 
     fn process_command(&mut self, cmd: Command) -> Result<()> {
         match cmd {
-            Command::Exit => return Err(Error::Quit),
+            Command::Quit => return Err(Error::Quit),
             Command::ShowBorder => {
                 self.border_visible = true;
                 self.refresh_layout_horizontal_split()?;

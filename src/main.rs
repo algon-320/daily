@@ -22,7 +22,7 @@ pub enum KeybindAction {
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Deserialize)]
 pub enum Command {
-    Exit,
+    Quit,
     ShowBorder,
     HideBorder,
     Close,
