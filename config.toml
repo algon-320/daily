@@ -8,3 +8,8 @@ keybind = [
     { action = "Press",   mod = [],                 key = 133, command = "ShowBorder"},
     { action = "Release", mod = ["Super"],          key = 133, command = "HideBorder"},
 ]
+
+[border]
+width = 1
+color_focused = "#FF8882"
+color_regular = "#505050"
