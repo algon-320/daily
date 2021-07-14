@@ -82,7 +82,7 @@ impl Config {
         const FILE: &str = "config.toml";
         let config = match std::fs::read(FILE) {
             Ok(bytes) => {
-                info!("use {}", FILE);
+                info!("configuration loaded from {}", FILE);
                 let config_str = String::from_utf8(bytes).map_err(|_| Error::InvalidConfig {
                     reason: "ill-formed UTF-8".to_owned(),
                 })?;
