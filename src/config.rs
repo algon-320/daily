@@ -16,15 +16,14 @@ enum KeyCode {
 
 const DEFAULT: &str = r#"
 launcher = "/usr/bin/dmenu_run"
-
 keybind = [
-    { action = "Press", mod = ["Super", "Shift"], key = 24, command = "Quit"},
-    { action = "Press", mod = ["Super"],          key = 54, command = "Close"},
-    { action = "Press", mod = ["Super"],          key = 33, command = "OpenLauncher"},
-    { action = "Press", mod = ["Super"],          key = 23, command = "FocusNext"},
-    { action = "Press", mod = ["Super", "Shift"], key = 23, command = "FocusPrev"},
-    { action = "Press",   mod = [],        key = 133, command = "ShowBorder"},
-    { action = "Release", mod = ["Super"], key = 133, command = "HideBorder"},
+    { action = "Press",   mod = ["Super", "Shift"], key = 24,  command = "Quit"},
+    { action = "Press",   mod = ["Super"],          key = 54,  command = "Close"},
+    { action = "Press",   mod = ["Super"],          key = 33,  command = "OpenLauncher"},
+    { action = "Press",   mod = ["Super"],          key = 23,  command = "FocusNext"},
+    { action = "Press",   mod = ["Super", "Shift"], key = 23,  command = "FocusPrev"},
+    { action = "Press",   mod = [],                 key = 133, command = "ShowBorder"},
+    { action = "Release", mod = ["Super"],          key = 133, command = "HideBorder"},
 ]
 "#;
 
