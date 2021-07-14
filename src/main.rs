@@ -4,6 +4,7 @@ mod event;
 mod winman;
 
 use log::{debug, error, info};
+use serde::Deserialize;
 use std::rc::Rc;
 
 use config::Config;
@@ -13,22 +14,13 @@ use winman::WinMan;
 
 use x11rb::connection::Connection;
 
-#[repr(u8)]
-enum KeyCode {
-    Tab = 23,
-    Q = 24,
-    C = 54,
-    P = 33,
-    Super = 133,
-}
-
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Deserialize)]
 pub enum KeybindAction {
     Press,
     Release,
 }
 
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Deserialize)]
 pub enum Command {
     Exit,
     ShowBorder,
@@ -43,7 +35,7 @@ pub fn start<S>(display_name: S) -> Result<()>
 where
     S: Into<Option<&'static str>>,
 {
-    let config: Rc<Config> = Config::default().into();
+    let config: Rc<Config> = Config::load()?.into();
 
     // Connect with the X server (specified by $DISPLAY).
     let (conn, _) = x11rb::connect(display_name.into()).map_err(|_| Error::ConnectionFailed)?;

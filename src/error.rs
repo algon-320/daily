@@ -17,6 +17,9 @@ pub enum Error {
 
     #[error(transparent)]
     X11Error(ReplyOrIdError),
+
+    #[error("Invalid config: {reason}")]
+    InvalidConfig { reason: String },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
