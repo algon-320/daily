@@ -8,10 +8,13 @@ use crate::event::{EventHandlerMethods, HandleResult};
 use crate::{Command, KeybindAction};
 
 use x11rb::connection::Connection;
+use x11rb::errors::ReplyError;
 use x11rb::protocol::{
     randr::{self, ConnectionExt as _},
     xproto::*,
+    ErrorKind,
 };
+use x11rb::x11_utils::X11Error;
 use Window as Wid;
 
 #[derive(Debug)]
@@ -169,24 +172,44 @@ impl<C: Connection> WinMan<C> {
     fn unmap_window(&mut self, wid: Wid) -> Result<()> {
         let state = self.windows.get_mut(&wid).expect("unknown window");
         state.mapped = false;
+
+        let focused = self.conn.get_input_focus()?.reply()?.focus;
+        debug!("unmap_window: current focus = {}", focused);
+        if focused == InputFocus::POINTER_ROOT.into() {
+            self.focus_next()?;
+        }
+
         self.refresh_layout_horizontal_split()?;
         Ok(())
     }
 
     fn focus_next(&mut self) -> Result<()> {
         let focused = self.conn.get_input_focus()?.reply()?.focus;
-        let next = self
-            .windows
-            .iter()
-            .filter(|(_, st)| st.mapped)
+        let mut iter = self.windows.iter().filter(|(_, st)| st.mapped);
+        let next = iter
+            .clone()
             .skip_while(|(&wid, _)| wid != focused)
             .nth(1)
-            .or_else(|| self.windows.iter().find(|(_, st)| st.mapped))
+            .or_else(|| iter.next())
             .map(|(wid, _)| wid);
+
+        debug!("focus_next: current={} --> next={:?}", focused, next);
+
         if let Some(&next) = next {
-            self.conn
+            match self
+                .conn
                 .set_input_focus(InputFocus::POINTER_ROOT, next, x11rb::CURRENT_TIME)?
-                .check()?;
+                .check()
+            {
+                Ok(()) => {}
+                Err(ReplyError::X11Error(X11Error {
+                    error_kind: ErrorKind::Window,
+                    ..
+                })) => {
+                    warn!("the next window (id={}) not found", next);
+                }
+                Err(err) => return Err(err.into()),
+            }
         }
         Ok(())
     }
@@ -204,7 +227,6 @@ impl<C: Connection> WinMan<C> {
             }
             Command::Close => {
                 let focused = self.conn.get_input_focus()?.reply()?.focus;
-                self.focus_next()?;
                 self.conn.destroy_window(focused)?;
                 self.conn.flush()?;
             }
