@@ -7,7 +7,7 @@ use log::{debug, error, info};
 use serde::Deserialize;
 use std::rc::Rc;
 
-use config::Config;
+use crate::config::Config;
 use error::{Error, Result};
 use event::{EventHandler, EventRouter};
 use winman::WinMan;

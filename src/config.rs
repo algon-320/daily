@@ -14,7 +14,7 @@ use std::convert::TryInto;
 //      AltL = 64,
 //      AltR = 108,
 
-const DEFAULT: &str = r###"
+const DEFAULT_CONFIG: &str = r###"
 launcher = "/usr/bin/dmenu_run"
 
 keybind = [
@@ -141,21 +141,49 @@ pub struct Config {
 
 impl Config {
     pub fn load() -> Result<Self> {
-        const FILE: &str = "config.toml";
-        match std::fs::read(FILE) {
-            Ok(bytes) => {
-                info!("configuration loaded from {}", FILE);
-                let config_str = String::from_utf8(bytes).map_err(|_| Error::InvalidConfig {
-                    reason: "ill-formed UTF-8".to_owned(),
-                })?;
-                let toml_repr: parse::ConfigTomlRepr =
-                    toml::from_str(&config_str).map_err(|e| Error::InvalidConfig {
-                        reason: format!("{}", e),
-                    })?;
-                toml_repr.try_into()
-            }
-            Err(_) => Ok(Self::default()),
-        }
+        use ::config::{File, FileFormat};
+        use std::{env, path::PathBuf};
+
+        let mut conf = ::config::Config::new();
+
+        // Default
+        conf.merge(File::from_str(DEFAULT_CONFIG, FileFormat::Toml).required(true))
+            .expect("ill-formed DEFAULT_CONFIG");
+
+        // config.toml localted on the current working directory.
+        conf.merge(File::new("config.toml", FileFormat::Toml).required(false))
+            .map_err(|e| Error::InvalidConfig {
+                reason: e.to_string(),
+            })?;
+
+        // config.toml localted on the xdg user config directory.
+        let mut xdg_config = env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                let mut p = PathBuf::new();
+                p.push(env::var_os("HOME").unwrap_or_else(|| "".into()));
+                p.push(".config");
+                p
+            });
+        xdg_config.push("daily");
+        xdg_config.push("config.toml");
+        conf.merge(
+            File::new(
+                xdg_config.to_str().expect("not UTF-8 path"),
+                FileFormat::Toml,
+            )
+            .required(false),
+        )
+        .map_err(|e| Error::InvalidConfig {
+            reason: e.to_string(),
+        })?;
+
+        // Generate config
+        let toml_repr: parse::ConfigTomlRepr =
+            conf.try_into().map_err(|e| Error::InvalidConfig {
+                reason: e.to_string(),
+            })?;
+        toml_repr.try_into()
     }
 
     pub fn keybind_match(&self, on: KeybindAction, modifier: u16, keycode: u8) -> Option<Command> {
@@ -172,8 +200,13 @@ impl Config {
 impl Default for Config {
     fn default() -> Self {
         info!("default config is used");
-        let toml_repr: parse::ConfigTomlRepr =
-            toml::from_str(DEFAULT).expect("Default config is wrong");
-        toml_repr.try_into().expect("Default config is wrong")
+
+        use ::config::{File, FileFormat};
+        let mut conf = ::config::Config::new();
+        conf.merge(File::from_str(DEFAULT_CONFIG, FileFormat::Toml).required(true))
+            .expect("ill-formed DEFAULT_CONFIG");
+
+        let toml_repr: parse::ConfigTomlRepr = conf.try_into().unwrap();
+        toml_repr.try_into().expect("ill-formed DEFAULT_CONFIG")
     }
 }
