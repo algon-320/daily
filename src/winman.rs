@@ -25,18 +25,18 @@ struct Context {
     root: Wid,
 }
 
-#[derive(Debug)]
+#[derive()]
 struct Screen {
     ctx: Context,
     u_wins: HashSet<Wid>,
     m_wins: HashSet<Wid>,
     monitor: Option<MonitorInfo>,
-    layout: HorizontalLayout,
+    layout: Box<dyn Layout>,
 }
 
 impl Screen {
     fn new_(ctx: Context, monitor: Option<MonitorInfo>) -> Self {
-        let layout = HorizontalLayout::new(ctx.clone());
+        let layout = Box::new(HorizontalLayout::new(ctx.clone()));
         Self {
             ctx,
             u_wins: HashSet::new(),
@@ -120,6 +120,10 @@ impl EventHandlerMethods for Screen {
     }
 }
 
+trait Layout {
+    fn layout(&mut self, mon: &MonitorInfo, windows: &[Wid]) -> Result<()>;
+}
+
 #[derive(Debug)]
 struct HorizontalLayout {
     ctx: Context,
@@ -129,8 +133,10 @@ impl HorizontalLayout {
     pub fn new(ctx: Context) -> Self {
         Self { ctx }
     }
+}
 
-    pub fn layout(&mut self, mon: &MonitorInfo, windows: &[Wid]) -> Result<()> {
+impl Layout for HorizontalLayout {
+    fn layout(&mut self, mon: &MonitorInfo, windows: &[Wid]) -> Result<()> {
         if windows.is_empty() {
             return Ok(());
         }
@@ -159,7 +165,7 @@ impl HorizontalLayout {
     }
 }
 
-#[derive(Debug)]
+#[derive()]
 pub struct WinMan {
     ctx: Context,
     monitors: Vec<randr::MonitorInfo>,
