@@ -9,7 +9,7 @@ use std::rc::Rc;
 
 use crate::config::Config;
 use error::{Error, Result};
-use event::{EventHandler, EventRouter};
+use event::EventHandler;
 use winman::WinMan;
 
 use x11rb::connection::Connection;
@@ -46,13 +46,10 @@ where
     let root = screen.root;
     debug!("root = {}", root);
 
-    let mut router = EventRouter::default();
-    let wm = WinMan::new(conn.clone(), config, root)?;
-    router.add_handler(Box::new(wm));
-
+    let mut wm = WinMan::new(conn.clone(), config, root)?;
     loop {
         let x11_event = conn.wait_for_event()?;
-        router.handle_event(x11_event.clone())?;
+        wm.handle_event(x11_event.clone())?;
     }
 }
 

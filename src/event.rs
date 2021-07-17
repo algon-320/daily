@@ -6,7 +6,6 @@ use x11rb::protocol::{xproto::*, Event};
 pub enum HandleResult {
     Consumed,
     Ignored,
-    NewHandler(Box<dyn EventHandler>),
 }
 
 pub trait EventHandler {
@@ -51,44 +50,5 @@ impl<T: EventHandlerMethods> EventHandler for T {
                 Ok(HandleResult::Ignored)
             }
         }
-    }
-}
-
-#[derive(Default)]
-pub struct EventRouter {
-    list: Vec<Box<dyn EventHandler>>,
-}
-
-impl EventRouter {
-    pub fn add_handler(&mut self, h: Box<dyn EventHandler>) {
-        self.list.push(h);
-    }
-}
-
-impl EventHandler for EventRouter {
-    fn handle_event(&mut self, event: Event) -> Result<HandleResult> {
-        trace!("event: {:?}", event);
-        for h in self.list.iter_mut() {
-            match h.handle_event(event.clone()) {
-                Ok(HandleResult::Ignored) => {
-                    continue;
-                }
-                Ok(HandleResult::Consumed) => {
-                    return Ok(HandleResult::Consumed);
-                }
-                Ok(HandleResult::NewHandler(new_handler)) => {
-                    self.list.push(new_handler);
-                    return Ok(HandleResult::Consumed);
-                }
-                Err(err) => return Err(err),
-            }
-        }
-        Ok(HandleResult::Ignored)
-    }
-}
-
-impl std::fmt::Debug for EventRouter {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "EventRouter {{...}}")
     }
 }
