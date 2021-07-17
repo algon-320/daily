@@ -14,36 +14,28 @@ use x11rb::protocol::{
     xproto::*,
     ErrorKind,
 };
+use x11rb::rust_connection::RustConnection;
 use x11rb::x11_utils::X11Error;
 use Window as Wid;
 
-#[derive(Debug)]
-struct Context<C: Connection> {
-    conn: Rc<C>,
+#[derive(Debug, Clone)]
+struct Context {
+    conn: Rc<RustConnection>,
     config: Rc<Config>,
     root: Wid,
 }
-impl<C: Connection> Clone for Context<C> {
-    fn clone(&self) -> Self {
-        Self {
-            conn: self.conn.clone(),
-            config: self.config.clone(),
-            root: self.root,
-        }
-    }
-}
 
 #[derive(Debug)]
-struct Screen<C: Connection> {
-    ctx: Context<C>,
+struct Screen {
+    ctx: Context,
     u_wins: HashSet<Wid>,
     m_wins: HashSet<Wid>,
     monitor: Option<MonitorInfo>,
-    layout: HorizontalLayout<C>,
+    layout: HorizontalLayout,
 }
 
-impl<C: Connection> Screen<C> {
-    fn new_(ctx: Context<C>, monitor: Option<MonitorInfo>) -> Self {
+impl Screen {
+    fn new_(ctx: Context, monitor: Option<MonitorInfo>) -> Self {
         let layout = HorizontalLayout::new(ctx.clone());
         Self {
             ctx,
@@ -54,11 +46,11 @@ impl<C: Connection> Screen<C> {
         }
     }
 
-    pub fn new(ctx: Context<C>) -> Self {
+    pub fn new(ctx: Context) -> Self {
         Self::new_(ctx, None)
     }
 
-    pub fn with_monitor(ctx: Context<C>, monitor: MonitorInfo) -> Self {
+    pub fn with_monitor(ctx: Context, monitor: MonitorInfo) -> Self {
         Self::new_(ctx, Some(monitor))
     }
 
@@ -87,7 +79,7 @@ impl<C: Connection> Screen<C> {
     }
 }
 
-impl<C: Connection> EventHandlerMethods for Screen<C> {
+impl EventHandlerMethods for Screen {
     fn on_map_notify(&mut self, notif: MapNotifyEvent) -> Result<HandleResult> {
         let wid = notif.window;
         if self.u_wins.contains(&wid) {
@@ -129,12 +121,12 @@ impl<C: Connection> EventHandlerMethods for Screen<C> {
 }
 
 #[derive(Debug)]
-struct HorizontalLayout<C: Connection> {
-    ctx: Context<C>,
+struct HorizontalLayout {
+    ctx: Context,
 }
 
-impl<C: Connection> HorizontalLayout<C> {
-    pub fn new(ctx: Context<C>) -> Self {
+impl HorizontalLayout {
+    pub fn new(ctx: Context) -> Self {
         Self { ctx }
     }
 
@@ -168,14 +160,14 @@ impl<C: Connection> HorizontalLayout<C> {
 }
 
 #[derive(Debug)]
-pub struct WinMan<C: Connection> {
-    ctx: Context<C>,
+pub struct WinMan {
+    ctx: Context,
     monitors: Vec<randr::MonitorInfo>,
-    screens: Vec<Screen<C>>,
+    screens: Vec<Screen>,
 }
 
-impl<C: Connection> WinMan<C> {
-    pub fn new(conn: Rc<C>, config: Rc<Config>, root: Wid) -> Result<Self> {
+impl WinMan {
+    pub fn new(conn: Rc<RustConnection>, config: Rc<Config>, root: Wid) -> Result<Self> {
         let mut wm = Self {
             ctx: Context { conn, config, root },
             monitors: Vec::new(),
@@ -318,7 +310,7 @@ impl<C: Connection> WinMan<C> {
     }
 }
 
-impl<C: Connection> EventHandlerMethods for WinMan<C> {
+impl EventHandlerMethods for WinMan {
     fn on_key_press(&mut self, e: KeyPressEvent) -> Result<HandleResult> {
         if let Some(cmd) = self
             .ctx

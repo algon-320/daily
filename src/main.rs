@@ -13,6 +13,7 @@ use event::EventHandler;
 use winman::WinMan;
 
 use x11rb::connection::Connection;
+use x11rb::rust_connection::RustConnection;
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Deserialize)]
 pub enum KeybindAction {
@@ -38,7 +39,8 @@ where
     let config: Rc<Config> = Config::load()?.into();
 
     // Connect with the X server (specified by $DISPLAY).
-    let (conn, _) = x11rb::connect(display_name.into()).map_err(|_| Error::ConnectionFailed)?;
+    let (conn, _) =
+        RustConnection::connect(display_name.into()).map_err(|_| Error::ConnectionFailed)?;
     let conn = Rc::new(conn);
 
     // Get a root window on the first screen.
