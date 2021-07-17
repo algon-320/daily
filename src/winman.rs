@@ -17,6 +17,13 @@ use x11rb::protocol::{
 use x11rb::x11_utils::X11Error;
 use Window as Wid;
 
+#[derive(Debug, Clone)]
+struct Context<C: Connection> {
+    conn: Rc<C>,
+    config: Rc<Config>,
+    root: Wid,
+}
+
 #[derive(Debug)]
 struct WindowState {
     mapped: bool,
@@ -24,9 +31,7 @@ struct WindowState {
 
 #[derive(Debug)]
 pub struct WinMan<C: Connection> {
-    conn: Rc<C>,
-    config: Rc<Config>,
-    root: Wid,
+    ctx: Context<C>,
     windows: HashMap<Wid, WindowState>,
     monitor_size: (u16, u16),
     border_visible: bool,
@@ -35,9 +40,7 @@ pub struct WinMan<C: Connection> {
 impl<C: Connection> WinMan<C> {
     pub fn new(conn: Rc<C>, config: Rc<Config>, root: Wid) -> Result<Self> {
         let mut wm = Self {
-            conn,
-            config,
-            root,
+            ctx: Context { conn, config, root },
             windows: HashMap::new(),
             monitor_size: (0, 0),
             border_visible: false,
@@ -51,17 +54,19 @@ impl<C: Connection> WinMan<C> {
         // Become a window manager of the root window.
         let mask = EventMask::SUBSTRUCTURE_NOTIFY | EventMask::SUBSTRUCTURE_REDIRECT;
         let aux = ChangeWindowAttributesAux::new().event_mask(mask);
-        self.conn
-            .change_window_attributes(self.root, &aux)?
+        self.ctx
+            .conn
+            .change_window_attributes(self.ctx.root, &aux)?
             .check()
             .map_err(|_| Error::WmAlreadyExists)?;
 
         // Grab keys
-        for (&(_, modif, keycode), _) in self.config.keybind_iter() {
-            self.conn
+        for (&(_, modif, keycode), _) in self.ctx.config.keybind_iter() {
+            self.ctx
+                .conn
                 .grab_key(
                     true,
-                    self.root,
+                    self.ctx.root,
                     modif,
                     keycode,
                     GrabMode::ASYNC,
@@ -73,14 +78,15 @@ impl<C: Connection> WinMan<C> {
 
         // Grab mouse buttons
         let event_mask: u32 = (EventMask::BUTTON_PRESS | EventMask::BUTTON_RELEASE).into();
-        self.conn
+        self.ctx
+            .conn
             .grab_button(
                 false,
-                self.root,
+                self.ctx.root,
                 event_mask as u16,
                 GrabMode::SYNC,
                 GrabMode::ASYNC,
-                self.root,
+                self.ctx.root,
                 x11rb::NONE,
                 ButtonIndex::M1,
                 ModMask::ANY,
@@ -89,17 +95,18 @@ impl<C: Connection> WinMan<C> {
             .map_err(|_| Error::ButtonAlreadyGrabbed)?;
 
         // Receive RROutputChangeNotifyEvent
-        self.conn
-            .randr_select_input(self.root, randr::NotifyMask::OUTPUT_CHANGE)?;
+        self.ctx
+            .conn
+            .randr_select_input(self.ctx.root, randr::NotifyMask::OUTPUT_CHANGE)?;
 
         self.refresh_monitor()?;
 
         // List all exising windows
-        let preexist = self.conn.query_tree(self.root)?.reply()?.children;
+        let preexist = self.ctx.conn.query_tree(self.ctx.root)?.reply()?.children;
 
         // Configure existing windows
         for wid in preexist {
-            let attr = self.conn.get_window_attributes(wid)?.reply()?;
+            let attr = self.ctx.conn.get_window_attributes(wid)?.reply()?;
             let state = WindowState {
                 mapped: attr.map_state == MapState::VIEWABLE,
             };
@@ -113,7 +120,11 @@ impl<C: Connection> WinMan<C> {
     }
 
     fn refresh_monitor(&mut self) -> Result<()> {
-        let monitors_reply = self.conn.randr_get_monitors(self.root, true)?.reply()?;
+        let monitors_reply = self
+            .ctx
+            .conn
+            .randr_get_monitors(self.ctx.root, true)?
+            .reply()?;
         let mon = monitors_reply.monitors.get(0).expect("no monitor");
         self.monitor_size = (mon.width, mon.height);
         Ok(())
@@ -129,7 +140,7 @@ impl<C: Connection> WinMan<C> {
             return Ok(());
         }
 
-        let focused = self.conn.get_input_focus()?.reply()?.focus;
+        let focused = self.ctx.conn.get_input_focus()?.reply()?.focus;
         debug!("focused = {}", focused);
 
         let w = (self.monitor_size.0 / mapped_count as u16) as u32;
@@ -139,26 +150,26 @@ impl<C: Connection> WinMan<C> {
         for (&wid, _) in self.windows.iter().filter(|(_, state)| state.mapped) {
             let show_border = self.border_visible && wid == focused;
 
-            let border = self.config.border.clone();
+            let border = self.ctx.config.border.clone();
             let conf = ConfigureWindowAux::new()
                 .x(x)
                 .y(0)
                 .border_width(border.width)
                 .width(w - border.width * 2)
                 .height(h - border.width * 2);
-            self.conn.configure_window(wid, &conf)?;
+            self.ctx.conn.configure_window(wid, &conf)?;
 
             if show_border {
                 let attr = ChangeWindowAttributesAux::new().border_pixel(border.color_focused);
-                self.conn.change_window_attributes(wid, &attr)?;
+                self.ctx.conn.change_window_attributes(wid, &attr)?;
             } else {
                 let attr = ChangeWindowAttributesAux::new().border_pixel(border.color_regular);
-                self.conn.change_window_attributes(wid, &attr)?;
+                self.ctx.conn.change_window_attributes(wid, &attr)?;
             }
 
             x += w as i32;
         }
-        self.conn.flush()?;
+        self.ctx.conn.flush()?;
         Ok(())
     }
 
@@ -173,7 +184,7 @@ impl<C: Connection> WinMan<C> {
         let state = self.windows.get_mut(&wid).expect("unknown window");
         state.mapped = false;
 
-        let focused = self.conn.get_input_focus()?.reply()?.focus;
+        let focused = self.ctx.conn.get_input_focus()?.reply()?.focus;
         debug!("unmap_window: current focus = {}", focused);
         if focused == InputFocus::POINTER_ROOT.into() {
             self.focus_next()?;
@@ -184,7 +195,7 @@ impl<C: Connection> WinMan<C> {
     }
 
     fn focus_next(&mut self) -> Result<()> {
-        let focused = self.conn.get_input_focus()?.reply()?.focus;
+        let focused = self.ctx.conn.get_input_focus()?.reply()?.focus;
         let mut iter = self.windows.iter().filter(|(_, st)| st.mapped);
         let next = iter
             .clone()
@@ -197,6 +208,7 @@ impl<C: Connection> WinMan<C> {
 
         if let Some(&next) = next {
             match self
+                .ctx
                 .conn
                 .set_input_focus(InputFocus::POINTER_ROOT, next, x11rb::CURRENT_TIME)?
                 .check()
@@ -226,9 +238,9 @@ impl<C: Connection> WinMan<C> {
                 self.refresh_layout_horizontal_split()?;
             }
             Command::Close => {
-                let focused = self.conn.get_input_focus()?.reply()?.focus;
-                self.conn.destroy_window(focused)?;
-                self.conn.flush()?;
+                let focused = self.ctx.conn.get_input_focus()?.reply()?.focus;
+                self.ctx.conn.destroy_window(focused)?;
+                self.ctx.conn.flush()?;
             }
             Command::FocusNext => {
                 self.focus_next()?;
@@ -238,7 +250,7 @@ impl<C: Connection> WinMan<C> {
                 warn!("not yet implemented");
             }
             Command::OpenLauncher => {
-                let _ = std::process::Command::new(self.config.launcher.as_str()).spawn();
+                let _ = std::process::Command::new(self.ctx.config.launcher.as_str()).spawn();
             }
         }
         Ok(())
@@ -248,6 +260,7 @@ impl<C: Connection> WinMan<C> {
 impl<C: Connection> EventHandlerMethods for WinMan<C> {
     fn on_key_press(&mut self, e: KeyPressEvent) -> Result<HandleResult> {
         if let Some(cmd) = self
+            .ctx
             .config
             .keybind_match(KeybindAction::Press, e.state, e.detail)
         {
@@ -261,6 +274,7 @@ impl<C: Connection> EventHandlerMethods for WinMan<C> {
 
     fn on_key_release(&mut self, e: KeyReleaseEvent) -> Result<HandleResult> {
         if let Some(cmd) = self
+            .ctx
             .config
             .keybind_match(KeybindAction::Release, e.state, e.detail)
         {
@@ -273,14 +287,18 @@ impl<C: Connection> EventHandlerMethods for WinMan<C> {
     }
 
     fn on_button_press(&mut self, e: ButtonPressEvent) -> Result<HandleResult> {
-        self.conn
+        self.ctx
+            .conn
             .allow_events(Allow::REPLAY_POINTER, x11rb::CURRENT_TIME)?
             .check()?;
         if e.child != x11rb::NONE {
             debug!("set_input_focus");
-            self.conn
-                .set_input_focus(InputFocus::POINTER_ROOT, e.child, x11rb::CURRENT_TIME)?;
-            self.conn.flush()?;
+            self.ctx.conn.set_input_focus(
+                InputFocus::POINTER_ROOT,
+                e.child,
+                x11rb::CURRENT_TIME,
+            )?;
+            self.ctx.conn.flush()?;
             Ok(HandleResult::Consumed)
         } else {
             Ok(HandleResult::Ignored)
@@ -288,20 +306,20 @@ impl<C: Connection> EventHandlerMethods for WinMan<C> {
     }
 
     fn on_map_request(&mut self, req: MapRequestEvent) -> Result<HandleResult> {
-        self.conn.map_window(req.window)?;
-        self.conn.flush()?;
+        self.ctx.conn.map_window(req.window)?;
+        self.ctx.conn.flush()?;
         Ok(HandleResult::Consumed)
     }
 
     fn on_map_notify(&mut self, notif: MapNotifyEvent) -> Result<HandleResult> {
         if !notif.override_redirect {
             self.map_window(notif.window)?;
-            self.conn.set_input_focus(
+            self.ctx.conn.set_input_focus(
                 InputFocus::POINTER_ROOT,
                 notif.window,
                 x11rb::CURRENT_TIME,
             )?;
-            self.conn.flush()?;
+            self.ctx.conn.flush()?;
             Ok(HandleResult::Consumed)
         } else {
             Ok(HandleResult::Ignored)
