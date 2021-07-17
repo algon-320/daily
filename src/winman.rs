@@ -1,169 +1,16 @@
 use log::{debug, error, info, trace, warn};
-use std::collections::{HashMap, HashSet};
-use std::rc::Rc;
 
-use crate::config::Config;
 use crate::error::{Error, Result};
 use crate::event::{EventHandlerMethods, HandleResult};
-use crate::{Command, KeybindAction};
+use crate::screen::Screen;
+use crate::{Command, Context, KeybindAction};
 
 use x11rb::connection::Connection;
-use x11rb::errors::ReplyError;
 use x11rb::protocol::{
-    randr::{self, ConnectionExt as _, MonitorInfo},
+    randr::{self, ConnectionExt as _},
     xproto::*,
-    ErrorKind,
 };
-use x11rb::rust_connection::RustConnection;
-use x11rb::x11_utils::X11Error;
 use Window as Wid;
-
-#[derive(Debug, Clone)]
-struct Context {
-    conn: Rc<RustConnection>,
-    config: Rc<Config>,
-    root: Wid,
-}
-
-#[derive()]
-struct Screen {
-    ctx: Context,
-    u_wins: HashSet<Wid>,
-    m_wins: HashSet<Wid>,
-    monitor: Option<MonitorInfo>,
-    layout: Box<dyn Layout>,
-}
-
-impl Screen {
-    fn new_(ctx: Context, monitor: Option<MonitorInfo>) -> Self {
-        let layout = Box::new(HorizontalLayout::new(ctx.clone()));
-        Self {
-            ctx,
-            u_wins: HashSet::new(),
-            m_wins: HashSet::new(),
-            monitor,
-            layout,
-        }
-    }
-
-    pub fn new(ctx: Context) -> Self {
-        Self::new_(ctx, None)
-    }
-
-    pub fn with_monitor(ctx: Context, monitor: MonitorInfo) -> Self {
-        Self::new_(ctx, Some(monitor))
-    }
-
-    pub fn show(&mut self, monitor: MonitorInfo) {
-        self.monitor = Some(monitor);
-    }
-    pub fn hide(&mut self) {
-        self.monitor = None;
-    }
-
-    pub fn add_window(&mut self, wid: Wid, mapped: bool) {
-        if mapped {
-            self.m_wins.insert(wid);
-        } else {
-            self.u_wins.insert(wid);
-        }
-    }
-
-    pub fn update_layout(&mut self) -> Result<()> {
-        // FIXME
-        let wins: Vec<Wid> = self.m_wins.iter().copied().collect();
-
-        let mon = self.monitor.as_ref().expect("screen not visible");
-        self.layout.layout(mon, &wins)?;
-        Ok(())
-    }
-}
-
-impl EventHandlerMethods for Screen {
-    fn on_map_notify(&mut self, notif: MapNotifyEvent) -> Result<HandleResult> {
-        let wid = notif.window;
-        if self.u_wins.contains(&wid) {
-            self.u_wins.remove(&wid);
-            self.m_wins.insert(wid);
-            self.update_layout()?;
-            Ok(HandleResult::Consumed)
-        } else {
-            Ok(HandleResult::Ignored)
-        }
-    }
-
-    fn on_unmap_notify(&mut self, notif: UnmapNotifyEvent) -> Result<HandleResult> {
-        let wid = notif.window;
-        if self.m_wins.contains(&wid) {
-            self.m_wins.remove(&wid);
-            self.u_wins.insert(wid);
-            self.update_layout()?;
-            Ok(HandleResult::Consumed)
-        } else {
-            Ok(HandleResult::Ignored)
-        }
-    }
-
-    fn on_destroy_notify(&mut self, notif: DestroyNotifyEvent) -> Result<HandleResult> {
-        let wid = notif.window;
-        if self.m_wins.contains(&wid) {
-            self.m_wins.remove(&wid);
-            self.update_layout()?;
-            Ok(HandleResult::Consumed)
-        } else if self.u_wins.contains(&wid) {
-            self.u_wins.remove(&wid);
-            self.update_layout()?;
-            Ok(HandleResult::Consumed)
-        } else {
-            Ok(HandleResult::Ignored)
-        }
-    }
-}
-
-trait Layout {
-    fn layout(&mut self, mon: &MonitorInfo, windows: &[Wid]) -> Result<()>;
-}
-
-#[derive(Debug)]
-struct HorizontalLayout {
-    ctx: Context,
-}
-
-impl HorizontalLayout {
-    pub fn new(ctx: Context) -> Self {
-        Self { ctx }
-    }
-}
-
-impl Layout for HorizontalLayout {
-    fn layout(&mut self, mon: &MonitorInfo, windows: &[Wid]) -> Result<()> {
-        if windows.is_empty() {
-            return Ok(());
-        }
-
-        let count = windows.len();
-        let w = (mon.width / count as u16) as u32;
-        let h = mon.height as u32;
-        let offset_x = mon.x as i32;
-        let offset_y = mon.y as i32;
-        let mut x = 0;
-
-        for &wid in windows.iter() {
-            let border = self.ctx.config.border.clone();
-            let conf = ConfigureWindowAux::new()
-                .x(offset_x + x)
-                .y(offset_y)
-                .border_width(border.width)
-                .width(w - border.width * 2)
-                .height(h - border.width * 2);
-            self.ctx.conn.configure_window(wid, &conf)?;
-            x += w as i32;
-        }
-        self.ctx.conn.flush()?;
-
-        Ok(())
-    }
-}
 
 #[derive()]
 pub struct WinMan {
@@ -173,9 +20,9 @@ pub struct WinMan {
 }
 
 impl WinMan {
-    pub fn new(conn: Rc<RustConnection>, config: Rc<Config>, root: Wid) -> Result<Self> {
+    pub fn new(ctx: Context) -> Result<Self> {
         let mut wm = Self {
-            ctx: Context { conn, config, root },
+            ctx,
             monitors: Vec::new(),
             screens: Vec::new(),
         };
@@ -272,33 +119,60 @@ impl WinMan {
         Ok(())
     }
 
+    fn change_border_color(&self, wid: Wid, color: u32) -> Result<()> {
+        let attr = ChangeWindowAttributesAux::new().border_pixel(color);
+        self.ctx.conn.change_window_attributes(wid, &attr)?;
+        self.ctx.conn.flush()?;
+        Ok(())
+    }
+
+    fn get_focused_window(&self) -> Result<Wid> {
+        Ok(self.ctx.conn.get_input_focus()?.reply()?.focus)
+    }
+
+    fn container_of(&self, wid: Window) -> Option<&'_ Screen> {
+        for screen in self.screens.iter() {
+            if screen.contains(wid).is_some() {
+                return Some(screen);
+            }
+        }
+        None
+    }
+
+    fn container_of_mut(&mut self, wid: Window) -> Option<&'_ mut Screen> {
+        for screen in self.screens.iter_mut() {
+            if screen.contains(wid).is_some() {
+                return Some(screen);
+            }
+        }
+        None
+    }
+
     fn process_command(&mut self, cmd: Command) -> Result<()> {
         match cmd {
             Command::Quit => return Err(Error::Quit),
 
             Command::ShowBorder => {
-                let focused = self.ctx.conn.get_input_focus()?.reply()?.focus;
+                let focused = self.get_focused_window()?;
                 if focused != InputFocus::POINTER_ROOT.into() {
                     let color = self.ctx.config.border.color_focused;
-                    let attr = ChangeWindowAttributesAux::new().border_pixel(color);
-                    self.ctx.conn.change_window_attributes(focused, &attr)?;
-                    self.ctx.conn.flush()?;
+                    self.change_border_color(focused, color)?;
                 }
             }
             Command::HideBorder => {
-                let focused = self.ctx.conn.get_input_focus()?.reply()?.focus;
+                let focused = self.get_focused_window()?;
                 if focused != InputFocus::POINTER_ROOT.into() {
                     let color = self.ctx.config.border.color_regular;
-                    let attr = ChangeWindowAttributesAux::new().border_pixel(color);
-                    self.ctx.conn.change_window_attributes(focused, &attr)?;
-                    self.ctx.conn.flush()?;
+                    self.change_border_color(focused, color)?;
                 }
             }
 
             Command::Close => {
-                let focused = self.ctx.conn.get_input_focus()?.reply()?.focus;
-                self.ctx.conn.destroy_window(focused)?;
-                self.ctx.conn.flush()?;
+                let focused = self.get_focused_window()?;
+                if focused != InputFocus::POINTER_ROOT.into() {
+                    self.ctx.conn.destroy_window(focused)?;
+                    self.ctx.conn.flush()?;
+                }
             }
 
             Command::FocusNext => {
@@ -364,34 +238,6 @@ impl EventHandlerMethods for WinMan {
         }
     }
 
-    fn on_map_request(&mut self, req: MapRequestEvent) -> Result<HandleResult> {
-        self.ctx.conn.map_window(req.window)?;
-        self.ctx.conn.flush()?;
-        Ok(HandleResult::Consumed)
-    }
-
-    fn on_map_notify(&mut self, notif: MapNotifyEvent) -> Result<HandleResult> {
-        if !notif.override_redirect {
-            for screen in self.screens.iter_mut() {
-                match screen.on_map_notify(notif) {
-                    Ok(HandleResult::Ignored) => continue,
-                    otherwise => return otherwise,
-                }
-            }
-        }
-        Ok(HandleResult::Ignored)
-    }
-
-    fn on_unmap_notify(&mut self, notif: UnmapNotifyEvent) -> Result<HandleResult> {
-        for screen in self.screens.iter_mut() {
-            match screen.on_unmap_notify(notif) {
-                Ok(HandleResult::Ignored) => continue,
-                otherwise => return otherwise,
-            }
-        }
-        Ok(HandleResult::Ignored)
-    }
-
     fn on_create_notify(&mut self, notif: CreateNotifyEvent) -> Result<HandleResult> {
         if !notif.override_redirect {
             let color = self.ctx.config.border.color_regular;
@@ -431,13 +277,35 @@ impl EventHandlerMethods for WinMan {
         }
     }
 
-    fn on_destroy_notify(&mut self, notif: DestroyNotifyEvent) -> Result<HandleResult> {
-        for screen in self.screens.iter_mut() {
-            match screen.on_destroy_notify(notif) {
-                Ok(HandleResult::Ignored) => continue,
-                otherwise => return otherwise,
+    fn on_map_request(&mut self, req: MapRequestEvent) -> Result<HandleResult> {
+        self.ctx.conn.map_window(req.window)?;
+        self.ctx.conn.flush()?;
+        Ok(HandleResult::Consumed)
+    }
+
+    fn on_map_notify(&mut self, notif: MapNotifyEvent) -> Result<HandleResult> {
+        if !notif.override_redirect {
+            if let Some(screen) = self.container_of_mut(notif.window) {
+                return screen.on_map_notify(notif);
             }
+            warn!("orphan window: {}", notif.window);
         }
+        Ok(HandleResult::Ignored)
+    }
+
+    fn on_unmap_notify(&mut self, notif: UnmapNotifyEvent) -> Result<HandleResult> {
+        if let Some(screen) = self.container_of_mut(notif.window) {
+            return screen.on_unmap_notify(notif);
+        }
+        warn!("orphan window: {}", notif.window);
+        Ok(HandleResult::Ignored)
+    }
+
+    fn on_destroy_notify(&mut self, notif: DestroyNotifyEvent) -> Result<HandleResult> {
+        if let Some(screen) = self.container_of_mut(notif.window) {
+            return screen.on_destroy_notify(notif);
+        }
+        warn!("orphan window: {}", notif.window);
         Ok(HandleResult::Ignored)
     }
 }
