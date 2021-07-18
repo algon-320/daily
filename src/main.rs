@@ -7,24 +7,21 @@ mod layout;
 mod screen;
 mod winman;
 
-use log::{error, info};
-
-use context::Context;
 use error::{Error, Result};
-use event::EventHandler;
-use winman::WinMan;
-
-use x11rb::connection::Connection;
+use log::{error, info};
 
 pub fn start<S>(display_name: S) -> Result<()>
 where
     S: Into<Option<&'static str>>,
 {
-    let ctx = Context::new(display_name)?;
-    let mut wm = WinMan::new(ctx.clone())?;
+    use event::EventHandler;
+    use x11rb::connection::Connection;
+
+    let ctx = context::Context::new(display_name)?;
+    let mut wm = winman::WinMan::new(ctx.clone())?;
     loop {
         let x11_event = ctx.conn.wait_for_event()?;
-        wm.handle_event(x11_event.clone())?;
+        wm.handle_event(x11_event)?;
     }
 }
 
