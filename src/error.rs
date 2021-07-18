@@ -15,6 +15,8 @@ pub enum Error {
     #[error("Another client has already grabbed the button we want to use.")]
     ButtonAlreadyGrabbed,
 
+    #[error("No screen available.")]
+    NoScreen,
     #[error("No monitor available.")]
     NoMonitor,
 

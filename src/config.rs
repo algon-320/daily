@@ -1,5 +1,5 @@
 use crate::error::{Error, Result};
-use crate::{Command, KeybindAction};
+use crate::keybind::{Command, KeybindAction};
 use log::info;
 use std::collections::HashMap;
 use std::convert::TryInto;
@@ -35,7 +35,7 @@ color_regular = "#505050"
 
 mod parse {
     use crate::error::{Error, Result};
-    use crate::{Command, KeybindAction};
+    use crate::keybind::{Command, KeybindAction};
     use serde::Deserialize;
     use std::collections::HashMap;
     use std::convert::TryInto;

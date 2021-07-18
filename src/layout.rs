@@ -1,5 +1,5 @@
+use crate::context::Context;
 use crate::error::Result;
-use crate::Context;
 
 use x11rb::connection::Connection;
 use x11rb::protocol::{randr::MonitorInfo, xproto::*};

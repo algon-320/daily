@@ -1,9 +1,9 @@
 use std::collections::HashSet;
 
+use crate::context::Context;
 use crate::error::Result;
 use crate::event::{EventHandlerMethods, HandleResult};
 use crate::layout::{HorizontalLayout, Layout};
-use crate::Context;
 
 use x11rb::protocol::{randr::MonitorInfo, xproto::*};
 use Window as Wid;

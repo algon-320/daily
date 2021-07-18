@@ -1,9 +1,10 @@
 use log::{debug, error, info, trace, warn};
 
+use crate::context::Context;
 use crate::error::{Error, Result};
 use crate::event::{EventHandlerMethods, HandleResult};
+use crate::keybind::{Command, KeybindAction};
 use crate::screen::Screen;
-use crate::{Command, Context, KeybindAction};
 
 use x11rb::connection::Connection;
 use x11rb::protocol::{
