@@ -31,6 +31,7 @@ pub trait EventHandlerMethods {
     event_handler_ignore!(on_unmap_notify, UnmapNotifyEvent);
     event_handler_ignore!(on_create_notify, CreateNotifyEvent);
     event_handler_ignore!(on_destroy_notify, DestroyNotifyEvent);
+    event_handler_ignore!(on_configure_notify, ConfigureNotifyEvent);
     event_handler_ignore!(on_randr_notify, randr::NotifyEvent);
 }
 
@@ -46,6 +47,7 @@ impl<T: EventHandlerMethods> EventHandler for T {
             Event::UnmapNotify(e) => self.on_unmap_notify(e),
             Event::CreateNotify(e) => self.on_create_notify(e),
             Event::DestroyNotify(e) => self.on_destroy_notify(e),
+            Event::ConfigureNotify(e) => self.on_configure_notify(e),
             Event::RandrNotify(e) => self.on_randr_notify(e),
             e => {
                 warn!("unhandled event: {:?}", e);

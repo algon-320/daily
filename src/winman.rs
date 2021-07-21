@@ -335,6 +335,11 @@ impl EventHandlerMethods for WinMan {
         Ok(HandleResult::Ignored)
     }
 
+    fn on_configure_notify(&mut self, notif: ConfigureNotifyEvent) -> Result<HandleResult> {
+        trace!("on_configure_notify: {:?}", notif);
+        Ok(HandleResult::Ignored)
+    }
+
     fn on_randr_notify(&mut self, notif: randr::NotifyEvent) -> Result<HandleResult> {
         trace!("on_randr_notify: {:?}", notif);
 
