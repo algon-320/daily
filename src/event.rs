@@ -1,7 +1,7 @@
 use crate::error::Result;
 use log::{trace, warn};
 
-use x11rb::protocol::{xproto::*, Event};
+use x11rb::protocol::{randr, xproto::*, Event};
 
 pub enum HandleResult {
     Consumed,
@@ -31,6 +31,7 @@ pub trait EventHandlerMethods {
     event_handler_ignore!(on_unmap_notify, UnmapNotifyEvent);
     event_handler_ignore!(on_create_notify, CreateNotifyEvent);
     event_handler_ignore!(on_destroy_notify, DestroyNotifyEvent);
+    event_handler_ignore!(on_randr_notify, randr::NotifyEvent);
 }
 
 impl<T: EventHandlerMethods> EventHandler for T {
@@ -45,6 +46,7 @@ impl<T: EventHandlerMethods> EventHandler for T {
             Event::UnmapNotify(e) => self.on_unmap_notify(e),
             Event::CreateNotify(e) => self.on_create_notify(e),
             Event::DestroyNotify(e) => self.on_destroy_notify(e),
+            Event::RandrNotify(e) => self.on_randr_notify(e),
             e => {
                 warn!("unhandled event: {:?}", e);
                 Ok(HandleResult::Ignored)

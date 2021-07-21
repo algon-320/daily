@@ -82,21 +82,13 @@ impl WinMan {
             .map_err(|_| Error::ButtonAlreadyGrabbed)?;
 
         // Receive RROutputChangeNotifyEvent
-        self.ctx
-            .conn
-            .randr_select_input(self.ctx.root, randr::NotifyMask::OUTPUT_CHANGE)?;
+        self.ctx.conn.randr_select_input(
+            self.ctx.root,
+            randr::NotifyMask::OUTPUT_CHANGE | randr::NotifyMask::CRTC_CHANGE,
+        )?;
 
         // Setup monitors
         self.setup_monitor()?;
-        if self.monitors.is_empty() {
-            return Err(Error::NoMonitor);
-        }
-
-        // Setup virtual screens
-        for mon in self.monitors.iter() {
-            self.screens
-                .push(Screen::with_monitor(self.ctx.clone(), mon.info.clone()));
-        }
 
         // Put all pre-existing windows on the first virtual screen.
         let preexist = self.ctx.conn.query_tree(self.ctx.root)?.reply()?.children;
@@ -108,10 +100,7 @@ impl WinMan {
             first.add_window(wid, mapped);
         }
 
-        // Refresh layouts
-        for screen in self.screens.iter_mut() {
-            screen.update_layout()?;
-        }
+        self.refresh_layout()?;
 
         Ok(())
     }
@@ -128,6 +117,29 @@ impl WinMan {
             .enumerate()
             .map(|(idx, info)| Monitor { info, screen: idx })
             .collect();
+
+        if self.monitors.is_empty() {
+            return Err(Error::NoMonitor);
+        }
+
+        if self.monitors.len() > self.screens.len() {
+            // Setup virtual screens
+            for mon in self.monitors.iter().skip(self.screens.len()) {
+                self.screens
+                    .push(Screen::with_monitor(self.ctx.clone(), mon.info.clone()));
+            }
+        }
+
+        for mon in self.monitors.iter() {
+            self.screens.get_mut(mon.screen).unwrap().monitor = Some(mon.info.clone());
+        }
+        Ok(())
+    }
+
+    fn refresh_layout(&mut self) -> Result<()> {
+        for screen in self.screens.iter_mut() {
+            screen.update_layout()?;
+        }
         Ok(())
     }
 
@@ -321,5 +333,25 @@ impl EventHandlerMethods for WinMan {
         }
         warn!("orphan window: {}", notif.window);
         Ok(HandleResult::Ignored)
+    }
+
+    fn on_randr_notify(&mut self, notif: randr::NotifyEvent) -> Result<HandleResult> {
+        trace!("on_randr_notify: {:?}", notif);
+
+        match notif.sub_code {
+            randr::Notify::CRTC_CHANGE => {
+                debug!("CRTC_CHANGE: {:?}", notif.u.as_cc());
+                self.setup_monitor()?;
+                self.refresh_layout()?;
+            }
+
+            randr::Notify::OUTPUT_CHANGE => {
+                debug!("OUTPUT_CHANGE: {:?}", notif.u.as_oc());
+                self.setup_monitor()?;
+                self.refresh_layout()?;
+            }
+            _ => {}
+        }
+        Ok(HandleResult::Consumed)
     }
 }
