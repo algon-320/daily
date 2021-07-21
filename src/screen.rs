@@ -77,6 +77,28 @@ impl Screen {
             None
         }
     }
+
+    pub fn focus_next(&mut self) -> Result<()> {
+        let old = self.ctx.get_focused_window()?;
+        let new = if self.m_wins.contains(&old) {
+            self.m_wins
+                .iter()
+                .copied()
+                .cycle()
+                .skip_while(|&w| w != old)
+                .nth(1)
+        } else {
+            self.m_wins.iter().copied().next()
+        };
+
+        if let Some(new) = new {
+            self.ctx
+                .conn
+                .set_input_focus(InputFocus::POINTER_ROOT, new, x11rb::CURRENT_TIME)?;
+            self.ctx.conn.flush()?;
+        }
+        Ok(())
+    }
 }
 
 impl EventHandlerMethods for Screen {

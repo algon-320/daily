@@ -13,10 +13,16 @@ use x11rb::protocol::{
 };
 use Window as Wid;
 
+#[derive(Debug)]
+struct Monitor {
+    info: randr::MonitorInfo,
+    screen: usize,
+}
+
 #[derive()]
 pub struct WinMan {
     ctx: Context,
-    monitors: Vec<randr::MonitorInfo>,
+    monitors: Vec<Monitor>,
     screens: Vec<Screen>,
 }
 
@@ -89,7 +95,7 @@ impl WinMan {
         // Setup virtual screens
         for mon in self.monitors.iter() {
             self.screens
-                .push(Screen::with_monitor(self.ctx.clone(), mon.clone()));
+                .push(Screen::with_monitor(self.ctx.clone(), mon.info.clone()));
         }
 
         // Put all pre-existing windows on the first virtual screen.
@@ -116,7 +122,12 @@ impl WinMan {
             .conn
             .randr_get_monitors(self.ctx.root, true)?
             .reply()?;
-        self.monitors = monitors_reply.monitors;
+        self.monitors = monitors_reply
+            .monitors
+            .into_iter()
+            .enumerate()
+            .map(|(idx, info)| Monitor { info, screen: idx })
+            .collect();
         Ok(())
     }
 
@@ -125,15 +136,6 @@ impl WinMan {
         self.ctx.conn.change_window_attributes(wid, &attr)?;
         self.ctx.conn.flush()?;
         Ok(())
-    }
-
-    fn container_of(&self, wid: Window) -> Option<&'_ Screen> {
-        for screen in self.screens.iter() {
-            if screen.contains(wid).is_some() {
-                return Some(screen);
-            }
-        }
-        None
     }
 
     fn container_of_mut(&mut self, wid: Window) -> Option<&'_ mut Screen> {
@@ -173,7 +175,24 @@ impl WinMan {
             }
 
             Command::FocusNext => {
-                warn!("Command::FocusNext: not yet implemented");
+                let focused = self.ctx.get_focused_window()?;
+                if focused != InputFocus::POINTER_ROOT.into() {
+                    let cr = self.ctx.config.border.color_regular;
+                    self.change_border_color(focused, cr)?;
+                }
+
+                let screen = match self.container_of_mut(focused) {
+                    Some(sc) => sc,
+                    None => self.screens.get_mut(0).expect("no screen"),
+                };
+
+                screen.focus_next()?;
+
+                let focused = self.ctx.get_focused_window()?;
+                if focused != InputFocus::POINTER_ROOT.into() {
+                    let cf = self.ctx.config.border.color_focused;
+                    self.change_border_color(focused, cf)?;
+                }
             }
             Command::FocusPrev => {
                 warn!("Command::FocusPrev: not yet implemented");
@@ -249,24 +268,22 @@ impl EventHandlerMethods for WinMan {
             let x = pointer.root_x;
             let y = pointer.root_y;
             let mut screen = None;
-            for sc in self.screens.iter_mut() {
-                if let Some(mon) = sc.monitor.as_mut() {
-                    if mon.x <= x
-                        && x < mon.x + mon.width as i16
-                        && mon.y <= y
-                        && y < mon.y + mon.height as i16
-                    {
-                        info!("pointer on {:?}", mon);
-                        screen = Some(sc);
-                        break;
-                    }
+            for mon in self.monitors.iter() {
+                let info = &mon.info;
+                if info.x <= x
+                    && x < info.x + info.width as i16
+                    && info.y <= y
+                    && y < info.y + info.height as i16
+                {
+                    info!("pointer on {:?}", mon);
+                    screen = Some(mon.screen);
+                    break;
                 }
             }
-            let screen = match screen {
-                Some(sc) => sc,
-                None => self.screens.get_mut(0).expect("no screen"),
-            };
-            screen.add_window(notif.window, false);
+            self.screens
+                .get_mut(screen.unwrap_or(0))
+                .expect("invalid screen")
+                .add_window(notif.window, false);
 
             Ok(HandleResult::Consumed)
         } else {
