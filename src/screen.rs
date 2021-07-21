@@ -5,6 +5,7 @@ use crate::error::Result;
 use crate::event::{EventHandlerMethods, HandleResult};
 use crate::layout::{HorizontalLayout, Layout};
 
+use x11rb::connection::Connection;
 use x11rb::protocol::{randr::MonitorInfo, xproto::*};
 use Window as Wid;
 
@@ -16,7 +17,7 @@ pub enum WindowState {
 
 #[derive()]
 pub struct Screen {
-    _ctx: Context,
+    ctx: Context,
     pub monitor: Option<MonitorInfo>,
     u_wins: HashSet<Wid>,
     m_wins: HashSet<Wid>,
@@ -27,7 +28,7 @@ impl Screen {
     fn new_(ctx: Context, monitor: Option<MonitorInfo>) -> Self {
         let layout = Box::new(HorizontalLayout::new(ctx.clone()));
         Self {
-            _ctx: ctx,
+            ctx,
             u_wins: HashSet::new(),
             m_wins: HashSet::new(),
             monitor,

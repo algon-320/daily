@@ -127,10 +127,6 @@ impl WinMan {
         Ok(())
     }
 
-    fn get_focused_window(&self) -> Result<Wid> {
-        Ok(self.ctx.conn.get_input_focus()?.reply()?.focus)
-    }
-
     fn container_of(&self, wid: Window) -> Option<&'_ Screen> {
         for screen in self.screens.iter() {
             if screen.contains(wid).is_some() {
@@ -154,14 +150,14 @@ impl WinMan {
             Command::Quit => return Err(Error::Quit),
 
             Command::ShowBorder => {
-                let focused = self.get_focused_window()?;
+                let focused = self.ctx.get_focused_window()?;
                 if focused != InputFocus::POINTER_ROOT.into() {
                     let color = self.ctx.config.border.color_focused;
                     self.change_border_color(focused, color)?;
                 }
             }
             Command::HideBorder => {
-                let focused = self.get_focused_window()?;
+                let focused = self.ctx.get_focused_window()?;
                 if focused != InputFocus::POINTER_ROOT.into() {
                     let color = self.ctx.config.border.color_regular;
                     self.change_border_color(focused, color)?;
@@ -169,7 +165,7 @@ impl WinMan {
             }
 
             Command::Close => {
-                let focused = self.get_focused_window()?;
+                let focused = self.ctx.get_focused_window()?;
                 if focused != InputFocus::POINTER_ROOT.into() {
                     self.ctx.conn.destroy_window(focused)?;
                     self.ctx.conn.flush()?;
