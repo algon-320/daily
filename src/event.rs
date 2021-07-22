@@ -37,6 +37,7 @@ pub trait EventHandlerMethods {
 
 impl<T: EventHandlerMethods> EventHandler for T {
     fn handle_event(&mut self, event: Event) -> Result<HandleResult> {
+        trace!("event: {:?}", event);
         match event {
             Event::KeyPress(e) => self.on_key_press(e),
             Event::KeyRelease(e) => self.on_key_release(e),

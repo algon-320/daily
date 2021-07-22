@@ -4,7 +4,7 @@ use crate::context::Context;
 use crate::error::{Error, Result};
 use crate::event::{EventHandlerMethods, HandleResult};
 use crate::keybind::{Command, KeybindAction};
-use crate::screen::Screen;
+use crate::screen::{Screen, WindowState};
 
 use x11rb::connection::Connection;
 use x11rb::protocol::{
@@ -95,9 +95,15 @@ impl WinMan {
         info!("preexist windows = {:?}", &preexist);
         for wid in preexist {
             let attr = self.ctx.conn.get_window_attributes(wid)?.reply()?;
-            let mapped = attr.map_state == MapState::VIEWABLE;
+
+            let state = if attr.map_state == MapState::VIEWABLE {
+                WindowState::Mapped
+            } else {
+                WindowState::Unmapped
+            };
+
             let first = self.screens.get_mut(0).expect("no screen");
-            first.add_window(wid, mapped);
+            first.add_window(wid, state);
         }
 
         self.refresh_layout()?;
@@ -151,12 +157,7 @@ impl WinMan {
     }
 
     fn container_of_mut(&mut self, wid: Window) -> Option<&'_ mut Screen> {
-        for screen in self.screens.iter_mut() {
-            if screen.contains(wid).is_some() {
-                return Some(screen);
-            }
-        }
-        None
+        self.screens.iter_mut().find(|s| s.contains(wid).is_some())
     }
 
     fn process_command(&mut self, cmd: Command) -> Result<()> {
@@ -295,7 +296,7 @@ impl EventHandlerMethods for WinMan {
             self.screens
                 .get_mut(screen.unwrap_or(0))
                 .expect("invalid screen")
-                .add_window(notif.window, false);
+                .add_window(notif.window, WindowState::Unmapped);
 
             Ok(HandleResult::Consumed)
         } else {
@@ -314,7 +315,6 @@ impl EventHandlerMethods for WinMan {
             if let Some(screen) = self.container_of_mut(notif.window) {
                 return screen.on_map_notify(notif);
             }
-            warn!("orphan window: {}", notif.window);
         }
         Ok(HandleResult::Ignored)
     }
@@ -323,7 +323,6 @@ impl EventHandlerMethods for WinMan {
         if let Some(screen) = self.container_of_mut(notif.window) {
             return screen.on_unmap_notify(notif);
         }
-        warn!("orphan window: {}", notif.window);
         Ok(HandleResult::Ignored)
     }
 
@@ -331,18 +330,14 @@ impl EventHandlerMethods for WinMan {
         if let Some(screen) = self.container_of_mut(notif.window) {
             return screen.on_destroy_notify(notif);
         }
-        warn!("orphan window: {}", notif.window);
         Ok(HandleResult::Ignored)
     }
 
     fn on_configure_notify(&mut self, notif: ConfigureNotifyEvent) -> Result<HandleResult> {
-        trace!("on_configure_notify: {:?}", notif);
         Ok(HandleResult::Ignored)
     }
 
     fn on_randr_notify(&mut self, notif: randr::NotifyEvent) -> Result<HandleResult> {
-        trace!("on_randr_notify: {:?}", notif);
-
         match notif.sub_code {
             randr::Notify::CRTC_CHANGE => {
                 debug!("CRTC_CHANGE: {:?}", notif.u.as_cc());

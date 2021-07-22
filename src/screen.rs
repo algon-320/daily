@@ -51,11 +51,14 @@ impl Screen {
         self.monitor = None;
     }
 
-    pub fn add_window(&mut self, wid: Wid, mapped: bool) {
-        if mapped {
-            self.m_wins.insert(wid);
-        } else {
-            self.u_wins.insert(wid);
+    pub fn add_window(&mut self, wid: Wid, state: WindowState) {
+        match state {
+            WindowState::Mapped => {
+                self.m_wins.insert(wid);
+            }
+            WindowState::Unmapped => {
+                self.u_wins.insert(wid);
+            }
         }
     }
 
@@ -104,40 +107,41 @@ impl Screen {
 impl EventHandlerMethods for Screen {
     fn on_map_notify(&mut self, notif: MapNotifyEvent) -> Result<HandleResult> {
         let wid = notif.window;
-        if self.u_wins.contains(&wid) {
-            self.u_wins.remove(&wid);
-            self.m_wins.insert(wid);
-            self.update_layout()?;
-            Ok(HandleResult::Consumed)
-        } else {
-            Ok(HandleResult::Ignored)
+        match self.contains(wid) {
+            Some(WindowState::Mapped) => Ok(HandleResult::Consumed),
+            Some(WindowState::Unmapped) => {
+                self.u_wins.remove(&wid);
+                self.m_wins.insert(wid);
+                self.update_layout()?;
+                Ok(HandleResult::Consumed)
+            }
+            None => Ok(HandleResult::Ignored),
         }
     }
 
     fn on_unmap_notify(&mut self, notif: UnmapNotifyEvent) -> Result<HandleResult> {
         let wid = notif.window;
-        if self.m_wins.contains(&wid) {
-            self.m_wins.remove(&wid);
-            self.u_wins.insert(wid);
-            self.update_layout()?;
-            Ok(HandleResult::Consumed)
-        } else {
-            Ok(HandleResult::Ignored)
+        match self.contains(wid) {
+            Some(WindowState::Unmapped) => Ok(HandleResult::Consumed),
+            Some(WindowState::Mapped) => {
+                self.m_wins.remove(&wid);
+                self.u_wins.insert(wid);
+                self.update_layout()?;
+                Ok(HandleResult::Consumed)
+            }
+            None => Ok(HandleResult::Ignored),
         }
     }
 
     fn on_destroy_notify(&mut self, notif: DestroyNotifyEvent) -> Result<HandleResult> {
         let wid = notif.window;
-        if self.m_wins.contains(&wid) {
-            self.m_wins.remove(&wid);
-            self.update_layout()?;
-            Ok(HandleResult::Consumed)
-        } else if self.u_wins.contains(&wid) {
-            self.u_wins.remove(&wid);
-            self.update_layout()?;
-            Ok(HandleResult::Consumed)
-        } else {
-            Ok(HandleResult::Ignored)
+        match self.contains(wid) {
+            Some(WindowState::Unmapped) | Some(WindowState::Mapped) => {
+                self.u_wins.remove(&wid);
+                self.m_wins.remove(&wid);
+                Ok(HandleResult::Consumed)
+            }
+            None => Ok(HandleResult::Ignored),
         }
     }
 }
