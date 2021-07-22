@@ -81,7 +81,7 @@ impl WinMan {
             .check()
             .map_err(|_| Error::ButtonAlreadyGrabbed)?;
 
-        // Receive RROutputChangeNotifyEvent
+        // Receive RROutputChangeNotify / RRCrtcChangeNotify
         self.ctx.conn.randr_select_input(
             self.ctx.root,
             randr::NotifyMask::OUTPUT_CHANGE | randr::NotifyMask::CRTC_CHANGE,
