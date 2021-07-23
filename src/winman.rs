@@ -24,6 +24,7 @@ pub struct WinMan {
     ctx: Context,
     monitors: Vec<Monitor>,
     screens: Vec<Screen>,
+    border_visible: bool,
 }
 
 impl WinMan {
@@ -32,6 +33,7 @@ impl WinMan {
             ctx,
             monitors: Vec::new(),
             screens: Vec::new(),
+            border_visible: false,
         };
         wm.init()?;
         Ok(wm)
@@ -93,7 +95,7 @@ impl WinMan {
         // Put all pre-existing windows on the first virtual screen.
         let preexist = self.ctx.conn.query_tree(self.ctx.root)?.reply()?.children;
         info!("preexist windows = {:?}", &preexist);
-        for wid in preexist {
+        for &wid in preexist.iter() {
             let attr = self.ctx.conn.get_window_attributes(wid)?.reply()?;
 
             let state = if attr.map_state == MapState::VIEWABLE {
@@ -104,6 +106,11 @@ impl WinMan {
 
             let first = self.screens.get_mut(0).expect("no screen");
             first.add_window(wid, state);
+        }
+
+        // Focus the first window
+        if let Some(&wid) = preexist.first() {
+            self.focus_change(wid)?;
         }
 
         self.refresh_layout()?;
@@ -160,6 +167,62 @@ impl WinMan {
         self.screens.iter_mut().find(|s| s.contains(wid).is_some())
     }
 
+    fn container_of_pointer_mut(&mut self) -> Result<&mut Screen> {
+        let pointer = self.ctx.conn.query_pointer(self.ctx.root)?.reply()?;
+        let (x, y) = (pointer.root_x, pointer.root_y);
+
+        let mon = self.monitors.iter().find(|mon| {
+            let xmn = mon.info.x;
+            let xmx = mon.info.x + mon.info.width as i16;
+            let ymn = mon.info.y;
+            let ymx = mon.info.y + mon.info.height as i16;
+            xmn <= x && x < xmx && ymn <= y && y < ymx
+        });
+        let mon = match mon {
+            Some(mon) => mon,
+            None => self.monitors.get(0).expect("No monitors"),
+        };
+
+        info!("pointer on {:?}", mon);
+        let screen = self.screens.get_mut(mon.screen).unwrap();
+        Ok(screen)
+    }
+
+    fn focus_change(&mut self, wid: Wid) -> Result<()> {
+        self.focus_change_with(|wm| {
+            wm.ctx
+                .conn
+                .set_input_focus(InputFocus::POINTER_ROOT, wid, x11rb::CURRENT_TIME)?;
+            wm.ctx.conn.flush()?;
+            Ok(())
+        })
+    }
+
+    fn focus_change_with<F, R>(&mut self, mut f: F) -> Result<R>
+    where
+        F: FnMut(&mut Self) -> Result<R>,
+    {
+        if self.border_visible {
+            let focused = self.ctx.get_focused_window()?;
+            if focused != InputFocus::POINTER_ROOT.into() {
+                let cr = self.ctx.config.border.color_regular;
+                self.change_border_color(focused, cr)?;
+            }
+        }
+
+        let res = f(self);
+
+        if self.border_visible {
+            let focused = self.ctx.get_focused_window()?;
+            if focused != InputFocus::POINTER_ROOT.into() {
+                let cr = self.ctx.config.border.color_focused;
+                self.change_border_color(focused, cr)?;
+            }
+        }
+
+        res
+    }
+
     fn process_command(&mut self, cmd: Command) -> Result<()> {
         match cmd {
             Command::Quit => return Err(Error::Quit),
@@ -170,6 +233,7 @@ impl WinMan {
                     let color = self.ctx.config.border.color_focused;
                     self.change_border_color(focused, color)?;
                 }
+                self.border_visible = true;
             }
             Command::HideBorder => {
                 let focused = self.ctx.get_focused_window()?;
@@ -177,6 +241,7 @@ impl WinMan {
                     let color = self.ctx.config.border.color_regular;
                     self.change_border_color(focused, color)?;
                 }
+                self.border_visible = false;
             }
 
             Command::Close => {
@@ -188,24 +253,15 @@ impl WinMan {
             }
 
             Command::FocusNext => {
-                let focused = self.ctx.get_focused_window()?;
-                if focused != InputFocus::POINTER_ROOT.into() {
-                    let cr = self.ctx.config.border.color_regular;
-                    self.change_border_color(focused, cr)?;
-                }
-
-                let screen = match self.container_of_mut(focused) {
-                    Some(sc) => sc,
-                    None => self.screens.get_mut(0).expect("no screen"),
-                };
-
-                screen.focus_next()?;
-
-                let focused = self.ctx.get_focused_window()?;
-                if focused != InputFocus::POINTER_ROOT.into() {
-                    let cf = self.ctx.config.border.color_focused;
-                    self.change_border_color(focused, cf)?;
-                }
+                self.focus_change_with(|wm| {
+                    let focused = wm.ctx.get_focused_window()?;
+                    let screen = match wm.container_of_mut(focused) {
+                        Some(sc) => sc,
+                        None => wm.screens.get_mut(0).expect("no screen"),
+                    };
+                    screen.focus_next()?;
+                    Ok(())
+                })?;
             }
             Command::FocusPrev => {
                 warn!("Command::FocusPrev: not yet implemented");
@@ -255,12 +311,7 @@ impl EventHandlerMethods for WinMan {
             .check()?;
         if e.child != x11rb::NONE {
             debug!("set_input_focus");
-            self.ctx.conn.set_input_focus(
-                InputFocus::POINTER_ROOT,
-                e.child,
-                x11rb::CURRENT_TIME,
-            )?;
-            self.ctx.conn.flush()?;
+            self.focus_change(e.child)?;
             Ok(HandleResult::Consumed)
         } else {
             Ok(HandleResult::Ignored)
@@ -276,27 +327,12 @@ impl EventHandlerMethods for WinMan {
                 .change_window_attributes(notif.window, &attr)?;
             self.ctx.conn.flush()?;
 
-            // FIXME:
-            let pointer = self.ctx.conn.query_pointer(self.ctx.root)?.reply()?;
-            let x = pointer.root_x;
-            let y = pointer.root_y;
-            let mut screen = None;
-            for mon in self.monitors.iter() {
-                let info = &mon.info;
-                if info.x <= x
-                    && x < info.x + info.width as i16
-                    && info.y <= y
-                    && y < info.y + info.height as i16
-                {
-                    info!("pointer on {:?}", mon);
-                    screen = Some(mon.screen);
-                    break;
-                }
-            }
-            self.screens
-                .get_mut(screen.unwrap_or(0))
-                .expect("invalid screen")
-                .add_window(notif.window, WindowState::Unmapped);
+            let focused = self.ctx.get_focused_window()?;
+            let screen = match self.container_of_mut(focused) {
+                Some(screen) => screen,
+                None => self.container_of_pointer_mut()?,
+            };
+            screen.add_window(notif.window, WindowState::Unmapped);
 
             Ok(HandleResult::Consumed)
         } else {
@@ -312,6 +348,8 @@ impl EventHandlerMethods for WinMan {
 
     fn on_map_notify(&mut self, notif: MapNotifyEvent) -> Result<HandleResult> {
         if !notif.override_redirect {
+            self.focus_change(notif.window)?;
+
             if let Some(screen) = self.container_of_mut(notif.window) {
                 return screen.on_map_notify(notif);
             }
