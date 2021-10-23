@@ -2,10 +2,28 @@ mod config;
 mod context;
 mod error;
 mod event;
-mod keybind;
 mod layout;
 mod screen;
 mod winman;
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, serde::Deserialize)]
+pub enum KeybindAction {
+    Press,
+    Release,
+}
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, serde::Deserialize)]
+pub enum Command {
+    Quit,
+    ShowBorder,
+    HideBorder,
+    Close,
+    FocusNext,
+    FocusPrev,
+    FocusNextMonitor,
+    FocusPrevMonitor,
+    OpenLauncher,
+}
 
 use error::{Error, Result};
 use log::{error, info};

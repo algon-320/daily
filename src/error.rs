@@ -21,7 +21,7 @@ pub enum Error {
     NoMonitor,
 
     #[error(transparent)]
-    X11Error(ReplyOrIdError),
+    X11(ReplyOrIdError),
 
     #[error("Invalid config: {reason}")]
     InvalidConfig { reason: String },
@@ -31,6 +31,6 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 impl<T: Into<ReplyOrIdError>> From<T> for Error {
     fn from(x: T) -> Error {
-        Error::X11Error(Into::<ReplyOrIdError>::into(x))
+        Error::X11(Into::<ReplyOrIdError>::into(x))
     }
 }

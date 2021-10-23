@@ -18,37 +18,26 @@ pub enum WindowState {
 #[derive()]
 pub struct Screen {
     ctx: Context,
-    pub monitor: Option<MonitorInfo>,
-    u_wins: HashSet<Wid>,
-    m_wins: HashSet<Wid>,
+    pub id: usize,
+    monitor: Option<MonitorInfo>,
+    u_wins: HashSet<Wid>, // unmapped windows
+    m_wins: HashSet<Wid>, // mapped windows
     layout: Box<dyn Layout>,
+    border_visible: bool,
 }
 
 impl Screen {
-    fn new_(ctx: Context, monitor: Option<MonitorInfo>) -> Self {
+    pub fn new(ctx: Context, id: usize, monitor: MonitorInfo) -> Self {
         let layout = Box::new(HorizontalLayout::new(ctx.clone()));
         Self {
+            id,
             ctx,
             u_wins: HashSet::new(),
             m_wins: HashSet::new(),
-            monitor,
+            monitor: Some(monitor),
             layout,
+            border_visible: false,
         }
-    }
-
-    pub fn new(ctx: Context) -> Self {
-        Self::new_(ctx, None)
-    }
-
-    pub fn with_monitor(ctx: Context, monitor: MonitorInfo) -> Self {
-        Self::new_(ctx, Some(monitor))
-    }
-
-    pub fn show(&mut self, monitor: MonitorInfo) {
-        self.monitor = Some(monitor);
-    }
-    pub fn hide(&mut self) {
-        self.monitor = None;
     }
 
     pub fn add_window(&mut self, wid: Wid, state: WindowState) {
@@ -62,12 +51,12 @@ impl Screen {
         }
     }
 
-    pub fn update_layout(&mut self) -> Result<()> {
+    pub fn refresh_layout(&mut self) -> Result<()> {
         // FIXME
         let wins: Vec<Wid> = self.m_wins.iter().copied().collect();
 
         let mon = self.monitor.as_ref().expect("screen not visible");
-        self.layout.layout(mon, &wins)?;
+        self.layout.layout(mon, &wins, self.border_visible)?;
         Ok(())
     }
 
@@ -81,6 +70,17 @@ impl Screen {
         }
     }
 
+    // FIXME: explicitly retains the focused window id
+    pub fn focus_any(&mut self) -> Result<()> {
+        if let Some(&first) = self.m_wins.iter().next() {
+            self.ctx
+                .conn
+                .set_input_focus(InputFocus::POINTER_ROOT, first, x11rb::CURRENT_TIME)?;
+            self.ctx.conn.flush()?;
+        }
+        Ok(())
+    }
+
     pub fn focus_next(&mut self) -> Result<()> {
         let old = self.ctx.get_focused_window()?;
         let new = if self.m_wins.contains(&old) {
@@ -91,7 +91,7 @@ impl Screen {
                 .skip_while(|&w| w != old)
                 .nth(1)
         } else {
-            self.m_wins.iter().copied().next()
+            return self.focus_any();
         };
 
         if let Some(new) = new {
@@ -101,6 +101,13 @@ impl Screen {
             self.ctx.conn.flush()?;
         }
         Ok(())
+    }
+
+    pub fn show_border(&mut self) {
+        self.border_visible = true;
+    }
+    pub fn hide_border(&mut self) {
+        self.border_visible = false;
     }
 }
 
@@ -112,7 +119,7 @@ impl EventHandlerMethods for Screen {
             Some(WindowState::Unmapped) => {
                 self.u_wins.remove(&wid);
                 self.m_wins.insert(wid);
-                self.update_layout()?;
+                self.refresh_layout()?;
                 Ok(HandleResult::Consumed)
             }
             None => Ok(HandleResult::Ignored),
@@ -126,7 +133,7 @@ impl EventHandlerMethods for Screen {
             Some(WindowState::Mapped) => {
                 self.m_wins.remove(&wid);
                 self.u_wins.insert(wid);
-                self.update_layout()?;
+                self.refresh_layout()?;
                 Ok(HandleResult::Consumed)
             }
             None => Ok(HandleResult::Ignored),

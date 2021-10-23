@@ -1,5 +1,5 @@
 use crate::error::{Error, Result};
-use crate::keybind::{Command, KeybindAction};
+use crate::{Command, KeybindAction};
 use log::info;
 use std::collections::HashMap;
 use std::convert::TryInto;
@@ -7,6 +7,8 @@ use std::convert::TryInto;
 //  KeyCode:
 //      Tab = 23,
 //      Q = 24,
+//      J = 44,
+//      K = 45,
 //      C = 54,
 //      P = 33,
 //      SuperL = 133,
@@ -35,7 +37,7 @@ color_regular = "#505050"
 
 mod parse {
     use crate::error::{Error, Result};
-    use crate::keybind::{Command, KeybindAction};
+    use crate::{Command, KeybindAction};
     use serde::Deserialize;
     use std::collections::HashMap;
     use std::convert::TryInto;
@@ -125,7 +127,7 @@ mod parse {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct BorderConfig {
     pub width: u32,
     pub color_focused: u32,
