@@ -24,6 +24,7 @@ $ DISPLAY=:2 cargo run --release
 |`Super`        |Show window border while pressing the key|
 |`Super` + `P`  |Open app launcher (`/usr/bin/dmenu_run` as default)|
 |`Super` + `Tab`|Focus the next window|
+|`Super` + `J`  |Focus the next monitor|
 |`Super` + `C`  |Close the focused window|
 |`Super` + `Shift` + `Q`  |Quit|
 
