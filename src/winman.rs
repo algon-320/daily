@@ -1,5 +1,5 @@
 use log::{debug, info, warn};
-use std::collections::HashMap;
+use std::collections::hash_map::{Entry as HashMapEntry, HashMap};
 
 use crate::context::Context;
 use crate::error::{Error, Result};
@@ -133,18 +133,27 @@ impl WinMan {
             .randr_get_monitors(self.ctx.root, true)?
             .reply()?;
 
+        for mon in self.monitors.drain(..) {
+            let screen = mon.screen;
+            self.screens.insert(screen.id, screen);
+        }
+        for (id, info) in monitors_reply.monitors.iter().enumerate() {
+            if let HashMapEntry::Vacant(entry) = self.screens.entry(id) {
+                let screen = Screen::new(self.ctx.clone(), id, info.clone())?;
+                entry.insert(Box::new(screen));
+            }
+        }
+
         self.monitors = monitors_reply
             .monitors
             .into_iter()
             .enumerate()
             .map(|(id, info)| {
-                let screen = Screen::new(self.ctx.clone(), id, info.clone());
-                Monitor {
-                    info,
-                    screen: Box::new(screen),
-                }
+                let mut screen = self.screens.remove(&id).unwrap();
+                screen.attach(info.clone())?;
+                Ok(Monitor { info, screen })
             })
-            .collect();
+            .collect::<Result<_>>()?;
 
         if self.monitors.is_empty() {
             return Err(Error::NoMonitor);
