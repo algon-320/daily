@@ -42,7 +42,9 @@ impl WinMan {
 
     fn init(&mut self) -> Result<()> {
         // Become a window manager of the root window.
-        let mask = EventMask::SUBSTRUCTURE_NOTIFY | EventMask::SUBSTRUCTURE_REDIRECT;
+        let mask = EventMask::SUBSTRUCTURE_NOTIFY
+            | EventMask::SUBSTRUCTURE_REDIRECT
+            | EventMask::FOCUS_CHANGE;
         let aux = ChangeWindowAttributesAux::new().event_mask(mask);
         self.ctx
             .conn
@@ -381,6 +383,32 @@ impl EventHandlerMethods for WinMan {
     }
 
     fn on_configure_notify(&mut self, _notif: ConfigureNotifyEvent) -> Result<HandleResult> {
+        Ok(HandleResult::Ignored)
+    }
+
+    fn on_focus_in(&mut self, focus_in: FocusInEvent) -> Result<HandleResult> {
+        if focus_in.event == self.ctx.root {
+            if focus_in.detail == NotifyDetail::POINTER_ROOT {
+                let mon = self.monitors.get_mut(self.focused_monitor).unwrap();
+                mon.screen.focus_any()?;
+            }
+            return Ok(HandleResult::Consumed);
+        }
+
+        if let Some(screen) = self.container_of_mut(focus_in.event) {
+            return screen.on_focus_in(focus_in);
+        }
+        Ok(HandleResult::Ignored)
+    }
+
+    fn on_focus_out(&mut self, focus_out: FocusInEvent) -> Result<HandleResult> {
+        if focus_out.event == self.ctx.root {
+            return Ok(HandleResult::Consumed);
+        }
+
+        if let Some(screen) = self.container_of_mut(focus_out.event) {
+            return screen.on_focus_out(focus_out);
+        }
         Ok(HandleResult::Ignored)
     }
 

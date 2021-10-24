@@ -22,22 +22,63 @@ pub struct Screen {
     monitor: Option<MonitorInfo>,
     u_wins: HashSet<Wid>, // unmapped windows
     m_wins: HashSet<Wid>, // mapped windows
+    background: Wid,      // background window
     layout: Box<dyn Layout>,
     border_visible: bool,
 }
 
 impl Screen {
-    pub fn new(ctx: Context, id: usize, monitor: MonitorInfo) -> Self {
-        let layout = Box::new(HorizontalLayout::new(ctx.clone()));
-        Self {
-            id,
+    pub fn new(ctx: Context, id: usize, monitor: MonitorInfo) -> Result<Self> {
+        let background = {
+            debug!("monitor_info: {:?}", monitor);
+            let wid = ctx.conn.generate_id()?;
+            let aux = CreateWindowAux::new()
+                .background_pixel(0x148231)
+                .event_mask(EventMask::FOCUS_CHANGE)
+                .override_redirect(1); // special window
+            ctx.conn.create_window(
+                x11rb::COPY_DEPTH_FROM_PARENT,
+                wid,
+                ctx.root,
+                monitor.x,
+                monitor.y,
+                monitor.width,
+                monitor.height,
+                0,
+                WindowClass::INPUT_OUTPUT,
+                x11rb::COPY_FROM_PARENT,
+                &aux,
+            )?;
+            ctx.conn.map_window(wid)?;
+            ctx.conn.flush()?;
+            wid
+        };
+
+        let layout = HorizontalLayout::new(ctx.clone());
+
+        Ok(Self {
             ctx,
+            id,
+            monitor: Some(monitor),
             u_wins: HashSet::new(),
             m_wins: HashSet::new(),
-            monitor: Some(monitor),
-            layout,
+            background,
+            layout: Box::new(layout),
             border_visible: false,
-        }
+        })
+    }
+
+    pub fn attach(&mut self, monitor: MonitorInfo) -> Result<()> {
+        let aux = ConfigureWindowAux::new()
+            .x(monitor.x as i32)
+            .y(monitor.y as i32)
+            .width(monitor.width as u32)
+            .height(monitor.height as u32);
+        self.ctx.conn.configure_window(self.background, &aux)?;
+        self.ctx.conn.flush()?;
+
+        self.monitor = Some(monitor);
+        Ok(())
     }
 
     pub fn add_window(&mut self, wid: Wid, state: WindowState) {
@@ -65,6 +106,8 @@ impl Screen {
             Some(WindowState::Mapped)
         } else if self.u_wins.contains(&wid) {
             Some(WindowState::Unmapped)
+        } else if wid == self.background {
+            Some(WindowState::Mapped)
         } else {
             None
         }
@@ -76,8 +119,14 @@ impl Screen {
             self.ctx
                 .conn
                 .set_input_focus(InputFocus::POINTER_ROOT, first, x11rb::CURRENT_TIME)?;
-            self.ctx.conn.flush()?;
+        } else {
+            self.ctx.conn.set_input_focus(
+                InputFocus::POINTER_ROOT,
+                self.background,
+                x11rb::CURRENT_TIME,
+            )?;
         }
+        self.ctx.conn.flush()?;
         Ok(())
     }
 
@@ -150,5 +199,13 @@ impl EventHandlerMethods for Screen {
             }
             None => Ok(HandleResult::Ignored),
         }
+    }
+
+    fn on_focus_in(&mut self, _focus_in: FocusInEvent) -> Result<HandleResult> {
+        Ok(HandleResult::Consumed)
+    }
+
+    fn on_focus_out(&mut self, _focus_out: FocusInEvent) -> Result<HandleResult> {
+        Ok(HandleResult::Consumed)
     }
 }
