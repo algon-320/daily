@@ -26,6 +26,7 @@ $ DISPLAY=:2 cargo run --release
 |`Super` + `Tab`|Focus the next window|
 |`Super` + `J`  |Focus the next monitor|
 |`Super` + `C`  |Close the focused window|
+|`Super` + `1` (num) |Switch (virtual) screen|
 |`Super` + `Shift` + `Q`  |Quit|
 
 ## Layout Strategies
