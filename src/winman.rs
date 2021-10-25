@@ -212,6 +212,8 @@ impl WinMan {
     }
 
     fn switch_screen(&mut self, id: usize) -> Result<()> {
+        debug_assert!(id < MAX_SCREENS);
+
         debug!("switch to screen: {}", id);
         if self.screens.contains_key(&id) {
             let mon = self.monitors.get_mut(self.focused_monitor).unwrap();
