@@ -7,7 +7,6 @@ use crate::event::{EventHandlerMethods, HandleResult};
 use crate::screen::{Screen, WindowState};
 use crate::{Command, KeybindAction};
 
-use x11rb::connection::Connection;
 use x11rb::protocol::{
     randr::{self, ConnectionExt as _},
     xproto::*,
@@ -125,7 +124,6 @@ impl WinMan {
         self.focused_monitor = 0;
 
         self.refresh_layout()?;
-        self.ctx.conn.flush()?;
 
         Ok(())
     }
@@ -190,7 +188,7 @@ impl WinMan {
         }
 
         for screen in self.screens.values_mut() {
-            if pred(&screen) {
+            if pred(screen) {
                 return Some(screen);
             }
         }
@@ -326,7 +324,6 @@ impl WinMan {
                 let focused = self.ctx.get_focused_window()?;
                 if focused != InputFocus::POINTER_ROOT.into() {
                     self.ctx.conn.destroy_window(focused)?;
-                    self.ctx.conn.flush()?;
                 }
             }
 
@@ -434,7 +431,6 @@ impl EventHandlerMethods for WinMan {
 
     fn on_map_request(&mut self, req: MapRequestEvent) -> Result<HandleResult> {
         self.ctx.conn.map_window(req.window)?;
-        self.ctx.conn.flush()?;
         Ok(HandleResult::Consumed)
     }
 

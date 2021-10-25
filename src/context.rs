@@ -43,7 +43,6 @@ impl Context {
         debug!("set_input_focus --> {}", win);
         self.conn
             .set_input_focus(InputFocus::POINTER_ROOT, win, x11rb::CURRENT_TIME)?;
-        self.conn.flush()?;
         Ok(())
     }
 

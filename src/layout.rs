@@ -3,7 +3,6 @@
 use crate::context::Context;
 use crate::error::Result;
 
-use x11rb::connection::Connection;
 use x11rb::protocol::{randr::MonitorInfo, xproto::*};
 use Window as Wid;
 
@@ -62,7 +61,6 @@ impl Layout for HorizontalLayout {
 
             x += w as i32;
         }
-        self.ctx.conn.flush()?;
 
         Ok(())
     }
@@ -83,6 +81,6 @@ impl HorizontalLayoutWithBorder {
 
 impl Layout for HorizontalLayoutWithBorder {
     fn layout(&mut self, mon: &MonitorInfo, windows: &[Wid], _: bool) -> Result<()> {
-        return self.base.layout(mon, windows, true);
+        self.base.layout(mon, windows, true)
     }
 }

@@ -48,9 +48,12 @@ where
 
     let ctx = context::Context::new(display_name)?;
     let mut wm = winman::WinMan::new(ctx.clone())?;
+    ctx.conn.flush()?;
+
     loop {
         let x11_event = ctx.conn.wait_for_event()?;
         wm.handle_event(x11_event)?;
+        ctx.conn.flush()?;
     }
 }
 

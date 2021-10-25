@@ -54,7 +54,6 @@ impl Screen {
                 x11rb::COPY_FROM_PARENT,
                 &aux,
             )?;
-            ctx.conn.flush()?;
             wid
         };
 
@@ -88,7 +87,6 @@ impl Screen {
                 _ => {}
             }
         }
-        self.ctx.conn.flush()?;
 
         self.monitor = Some(monitor);
         self.refresh_layout()?;
@@ -100,15 +98,11 @@ impl Screen {
 
         self.ctx.conn.unmap_window(self.background)?;
         for (&win, state) in self.wins.iter_mut() {
-            match state {
-                WindowState::Mapped => {
-                    *state = WindowState::Hidden;
-                    self.ctx.conn.unmap_window(win)?;
-                }
-                _ => {}
+            if *state == WindowState::Mapped {
+                *state = WindowState::Hidden;
+                self.ctx.conn.unmap_window(win)?;
             }
         }
-        self.ctx.conn.flush()?;
 
         Ok(())
     }
@@ -118,7 +112,7 @@ impl Screen {
         let state = if self.monitor.is_none() && state == WindowState::Mapped {
             WindowState::Hidden
         } else {
-            state.into()
+            state
         };
 
         self.wins.insert(wid, state);
@@ -126,7 +120,6 @@ impl Screen {
         if state == WindowState::Mapped {
             self.refresh_layout()?;
             self.ctx.conn.map_window(wid)?;
-            self.ctx.conn.flush()?;
         }
         Ok(())
     }
@@ -136,7 +129,6 @@ impl Screen {
 
         if state == WindowState::Mapped {
             self.ctx.conn.unmap_window(wid)?;
-            self.ctx.conn.flush()?;
         }
 
         self.refresh_layout()?;
@@ -234,7 +226,6 @@ impl EventHandlerMethods for Screen {
         if let WindowState::Created = self.wins[&wid] {
             debug!("focus newly mapped window: wid={}", wid);
             self.ctx.focus_window(wid)?;
-            self.ctx.conn.flush()?;
         }
 
         self.wins.insert(wid, WindowState::Mapped); // update
