@@ -191,7 +191,9 @@ impl Screen {
 
         let next = self
             .wins
-            .keys()
+            .iter()
+            .filter(is_mapped)
+            .map(|(wid, _)| wid)
             .copied()
             .cycle()
             .skip_while(|&w| w != old)
