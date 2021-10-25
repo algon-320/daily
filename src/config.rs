@@ -11,10 +11,11 @@ use std::convert::TryInto;
 //      ...
 //      Tab = 23,
 //      Q = 24,
+//      T = 28,
+//      P = 33,
 //      J = 44,
 //      K = 45,
 //      C = 54,
-//      P = 33,
 //      SuperL = 133,
 //      SuperR = 134,
 //      AltL = 64,
@@ -22,11 +23,13 @@ use std::convert::TryInto;
 
 const DEFAULT_CONFIG: &str = r###"
 launcher = "/usr/bin/dmenu_run"
+terminal = "/usr/bin/xterm"
 
 keybind = [
     { action = "Press",   mod = ["Super", "Shift"], key = 24,  command = "Quit"},
     { action = "Press",   mod = ["Super"],          key = 54,  command = "Close"},
     { action = "Press",   mod = ["Super"],          key = 33,  command = "OpenLauncher"},
+    { action = "Press",   mod = ["Super"],          key = 28,  command = "OpenTerminal"},
     { action = "Press",   mod = ["Super"],          key = 23,  command = "FocusNext"},
     { action = "Press",   mod = ["Super", "Shift"], key = 23,  command = "FocusPrev"},
     { action = "Press",   mod = [],                 key = 133, command = "ShowBorder"},
@@ -99,6 +102,7 @@ mod parse {
     pub struct ConfigTomlRepr {
         keybind: Vec<KeyBind>,
         launcher: String,
+        terminal: String,
         border: BorderConfig,
     }
 
@@ -133,10 +137,12 @@ mod parse {
             }
 
             let launcher = toml_repr.launcher;
+            let terminal = toml_repr.terminal;
 
             Ok(Config {
                 keybind,
                 launcher,
+                terminal,
                 border: toml_repr.border.try_into()?,
             })
         }
@@ -154,6 +160,7 @@ pub struct BorderConfig {
 pub struct Config {
     pub keybind: HashMap<(KeybindAction, u16, u8), Command>,
     pub launcher: String,
+    pub terminal: String,
     pub border: BorderConfig,
 }
 

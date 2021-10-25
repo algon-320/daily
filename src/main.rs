@@ -23,6 +23,7 @@ pub enum Command {
     FocusNextMonitor,
     FocusPrevMonitor,
     OpenLauncher,
+    OpenTerminal,
     Screen1,
     Screen2,
     Screen3,

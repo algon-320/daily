@@ -351,7 +351,16 @@ impl WinMan {
             }
 
             Command::OpenLauncher => {
-                let _ = std::process::Command::new(self.ctx.config.launcher.as_str()).spawn();
+                let _ = std::process::Command::new("sh")
+                    .arg("-c")
+                    .arg(self.ctx.config.launcher.as_str())
+                    .spawn();
+            }
+            Command::OpenTerminal => {
+                let _ = std::process::Command::new("sh")
+                    .arg("-c")
+                    .arg(self.ctx.config.terminal.as_str())
+                    .spawn();
             }
 
             Command::Screen1 => self.switch_screen(0)?,

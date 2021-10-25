@@ -1,8 +1,11 @@
 launcher = "/usr/bin/dmenu_run"
+terminal = "/usr/bin/xterm"
+
 keybind = [
     { action = "Press",   mod = ["Super", "Shift"], key = 24,  command = "Quit"},
     { action = "Press",   mod = ["Super"],          key = 54,  command = "Close"},
     { action = "Press",   mod = ["Super"],          key = 33,  command = "OpenLauncher"},
+    { action = "Press",   mod = ["Super"],          key = 28,  command = "OpenTerminal"},
     { action = "Press",   mod = ["Super"],          key = 23,  command = "FocusNext"},
     { action = "Press",   mod = ["Super", "Shift"], key = 23,  command = "FocusPrev"},
     { action = "Press",   mod = ["Super"],          key = 44,  command = "FocusNextMonitor"},
