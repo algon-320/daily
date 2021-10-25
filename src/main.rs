@@ -28,6 +28,11 @@ pub enum Command {
     Screen3,
     Screen4,
     Screen5,
+    MoveToScreen1,
+    MoveToScreen2,
+    MoveToScreen3,
+    MoveToScreen4,
+    MoveToScreen5,
 }
 
 use error::{Error, Result};

@@ -11,34 +11,11 @@ use x11rb::protocol::{randr::MonitorInfo, xproto::*};
 use Window as Wid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum MappingState {
-    Mapped,
-    Unmapped,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-enum WindowState {
+pub enum WindowState {
+    Created,
     Mapped,
     Unmapped,
     Hidden,
-}
-
-impl From<MappingState> for WindowState {
-    fn from(state: MappingState) -> WindowState {
-        match state {
-            MappingState::Mapped => WindowState::Mapped,
-            MappingState::Unmapped => WindowState::Unmapped,
-        }
-    }
-}
-
-impl From<WindowState> for MappingState {
-    fn from(state: WindowState) -> MappingState {
-        match state {
-            WindowState::Mapped => MappingState::Mapped,
-            _ => MappingState::Unmapped,
-        }
-    }
 }
 
 fn is_mapped<'a>(&(_, &state): &(&'a Wid, &'a WindowState)) -> bool {
@@ -111,6 +88,7 @@ impl Screen {
                 _ => {}
             }
         }
+        self.ctx.conn.flush()?;
 
         self.monitor = Some(monitor);
         self.refresh_layout()?;
@@ -135,8 +113,34 @@ impl Screen {
         Ok(())
     }
 
-    pub fn add_window(&mut self, wid: Wid, state: MappingState) {
-        self.wins.insert(wid, state.into());
+    pub fn add_window(&mut self, wid: Wid, state: WindowState) -> Result<()> {
+        debug!("add_window; wid={}, state={:?}", wid, state);
+        let state = if self.monitor.is_none() && state == WindowState::Mapped {
+            WindowState::Hidden
+        } else {
+            state.into()
+        };
+
+        self.wins.insert(wid, state);
+
+        if state == WindowState::Mapped {
+            self.refresh_layout()?;
+            self.ctx.conn.map_window(wid)?;
+            self.ctx.conn.flush()?;
+        }
+        Ok(())
+    }
+
+    pub fn forget_window(&mut self, wid: Wid) -> Result<WindowState> {
+        let state = self.wins.remove(&wid).expect("unknown window");
+
+        if state == WindowState::Mapped {
+            self.ctx.conn.unmap_window(wid)?;
+            self.ctx.conn.flush()?;
+        }
+
+        self.refresh_layout()?;
+        Ok(state)
     }
 
     pub fn refresh_layout(&mut self) -> Result<()> {
@@ -157,11 +161,11 @@ impl Screen {
         Ok(())
     }
 
-    pub fn contains(&self, wid: Wid) -> Option<MappingState> {
+    pub fn contains(&self, wid: Wid) -> Option<WindowState> {
         if wid == self.background {
-            Some(MappingState::Mapped)
+            Some(WindowState::Mapped)
         } else {
-            self.wins.get(&wid).copied().map(MappingState::from)
+            self.wins.get(&wid).copied().map(WindowState::from)
         }
     }
 
@@ -200,6 +204,7 @@ impl Screen {
             .nth(1);
 
         if let Some(next) = next {
+            debug!("focus_next: next={}", next);
             self.ctx.focus_window(next)?;
         }
         Ok(())
@@ -226,8 +231,10 @@ impl EventHandlerMethods for Screen {
         }
 
         // Newly mapped window
-        if let WindowState::Unmapped = self.wins[&wid] {
+        if let WindowState::Created = self.wins[&wid] {
+            debug!("focus newly mapped window: wid={}", wid);
             self.ctx.focus_window(wid)?;
+            self.ctx.conn.flush()?;
         }
 
         self.wins.insert(wid, WindowState::Mapped); // update

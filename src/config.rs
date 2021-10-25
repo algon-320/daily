@@ -37,6 +37,12 @@ keybind = [
     { action = "Press",   mod = ["Super"],          key = 12,  command = "Screen3"},
     { action = "Press",   mod = ["Super"],          key = 13,  command = "Screen4"},
     { action = "Press",   mod = ["Super"],          key = 14,  command = "Screen5"},
+
+    { action = "Press",   mod = ["Super", "Shift"], key = 10,  command = "MoveToScreen1"},
+    { action = "Press",   mod = ["Super", "Shift"], key = 11,  command = "MoveToScreen2"},
+    { action = "Press",   mod = ["Super", "Shift"], key = 12,  command = "MoveToScreen3"},
+    { action = "Press",   mod = ["Super", "Shift"], key = 13,  command = "MoveToScreen4"},
+    { action = "Press",   mod = ["Super", "Shift"], key = 14,  command = "MoveToScreen5"},
 ]
 
 [border]
