@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::context::Context;
 use crate::error::Result;
 
@@ -63,5 +65,24 @@ impl Layout for HorizontalLayout {
         self.ctx.conn.flush()?;
 
         Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct HorizontalLayoutWithBorder {
+    ctx: Context,
+    base: HorizontalLayout,
+}
+
+impl HorizontalLayoutWithBorder {
+    pub fn new(ctx: Context) -> Self {
+        let base = HorizontalLayout::new(ctx.clone());
+        Self { ctx, base }
+    }
+}
+
+impl Layout for HorizontalLayoutWithBorder {
+    fn layout(&mut self, mon: &MonitorInfo, windows: &[Wid], _: bool) -> Result<()> {
+        return self.base.layout(mon, windows, true);
     }
 }
