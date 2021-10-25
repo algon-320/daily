@@ -30,6 +30,8 @@ $ DISPLAY=:2 cargo run --release
 |`Super` + `1` (num) |Switch (virtual) screen|
 |`Super` + `Shift` + `1` (num) |Move the focused window to the specified (virtual) screen|
 |`Super` + `Shift` + `Q`  |Quit|
+|`Super` + `Up` (`Down`/ `Left` / `Right`)|Move the mouse cursor up / down / left / right|
+|`Super` + `Enter`|Mouse left-click (NOTE: this feature depends on `xdotool`)|
 
 ## Layout Strategies
 

@@ -34,6 +34,12 @@ pub enum Command {
     MoveToScreen3,
     MoveToScreen4,
     MoveToScreen5,
+
+    MovePointerUp,
+    MovePointerDown,
+    MovePointerLeft,
+    MovePointerRight,
+    MouseClickLeft,
 }
 
 use error::{Error, Result};

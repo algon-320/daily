@@ -371,6 +371,35 @@ impl WinMan {
             Command::MoveToScreen3 => self.move_window_to_screen(2)?,
             Command::MoveToScreen4 => self.move_window_to_screen(3)?,
             Command::MoveToScreen5 => self.move_window_to_screen(4)?,
+
+            Command::MovePointerUp => {
+                self.ctx
+                    .conn
+                    .warp_pointer(x11rb::NONE, x11rb::NONE, 0, 0, 0, 0, 0, -32)?;
+            }
+            Command::MovePointerDown => {
+                self.ctx
+                    .conn
+                    .warp_pointer(x11rb::NONE, x11rb::NONE, 0, 0, 0, 0, 0, 32)?;
+            }
+            Command::MovePointerLeft => {
+                self.ctx
+                    .conn
+                    .warp_pointer(x11rb::NONE, x11rb::NONE, 0, 0, 0, 0, -32, 0)?;
+            }
+            Command::MovePointerRight => {
+                self.ctx
+                    .conn
+                    .warp_pointer(x11rb::NONE, x11rb::NONE, 0, 0, 0, 0, 32, 0)?;
+            }
+
+            Command::MouseClickLeft => {
+                // FIXME: avoid dependence on xdotool
+                let _ = std::process::Command::new("sh")
+                    .arg("-c")
+                    .arg("xdotool click 1")
+                    .spawn();
+            }
         }
         Ok(())
     }

@@ -13,6 +13,7 @@ use std::convert::TryInto;
 //      Q = 24,
 //      T = 28,
 //      P = 33,
+//      Enter = 36,
 //      J = 44,
 //      K = 45,
 //      C = 54,
@@ -20,6 +21,10 @@ use std::convert::TryInto;
 //      SuperR = 134,
 //      AltL = 64,
 //      AltR = 108,
+//      Up = 111,
+//      Down = 116,
+//      Left = 113,
+//      Right = 114,
 
 const DEFAULT_CONFIG: &str = r###"
 launcher = "/usr/bin/dmenu_run"
@@ -46,6 +51,13 @@ keybind = [
     { action = "Press",   mod = ["Super", "Shift"], key = 12,  command = "MoveToScreen3"},
     { action = "Press",   mod = ["Super", "Shift"], key = 13,  command = "MoveToScreen4"},
     { action = "Press",   mod = ["Super", "Shift"], key = 14,  command = "MoveToScreen5"},
+
+    { action = "Press",   mod = ["Super"],          key = 111, command = "MovePointerUp"},
+    { action = "Press",   mod = ["Super"],          key = 116, command = "MovePointerDown"},
+    { action = "Press",   mod = ["Super"],          key = 113, command = "MovePointerLeft"},
+    { action = "Press",   mod = ["Super"],          key = 114, command = "MovePointerRight"},
+
+    { action = "Press",   mod = ["Super"],          key = 36,  command = "MouseClickLeft"},
 ]
 
 [border]

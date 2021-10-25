@@ -24,6 +24,13 @@ keybind = [
     { action = "Press",   mod = ["Super", "Shift"], key = 12,  command = "MoveToScreen3"},
     { action = "Press",   mod = ["Super", "Shift"], key = 13,  command = "MoveToScreen4"},
     { action = "Press",   mod = ["Super", "Shift"], key = 14,  command = "MoveToScreen5"},
+
+    { action = "Press",   mod = ["Super"],          key = 111, command = "MovePointerUp"},
+    { action = "Press",   mod = ["Super"],          key = 116, command = "MovePointerDown"},
+    { action = "Press",   mod = ["Super"],          key = 113, command = "MovePointerLeft"},
+    { action = "Press",   mod = ["Super"],          key = 114, command = "MovePointerRight"},
+
+    { action = "Press",   mod = ["Super"],          key = 36,  command = "MouseClickLeft"},
 ]
 
 [border]
