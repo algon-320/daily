@@ -1,4 +1,5 @@
-use std::collections::HashSet;
+use log::debug;
+use std::collections::HashMap;
 
 use crate::context::Context;
 use crate::error::Result;
@@ -9,10 +10,39 @@ use x11rb::connection::Connection;
 use x11rb::protocol::{randr::MonitorInfo, xproto::*};
 use Window as Wid;
 
-#[derive(Debug)]
-pub enum WindowState {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MappingState {
     Mapped,
     Unmapped,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum WindowState {
+    Mapped,
+    Unmapped,
+    Hidden,
+}
+
+impl From<MappingState> for WindowState {
+    fn from(state: MappingState) -> WindowState {
+        match state {
+            MappingState::Mapped => WindowState::Mapped,
+            MappingState::Unmapped => WindowState::Unmapped,
+        }
+    }
+}
+
+impl From<WindowState> for MappingState {
+    fn from(state: WindowState) -> MappingState {
+        match state {
+            WindowState::Mapped => MappingState::Mapped,
+            _ => MappingState::Unmapped,
+        }
+    }
+}
+
+fn is_mapped<'a>(&(_, &state): &(&'a Wid, &'a WindowState)) -> bool {
+    state == WindowState::Mapped
 }
 
 #[derive()]
@@ -20,17 +50,15 @@ pub struct Screen {
     ctx: Context,
     pub id: usize,
     monitor: Option<MonitorInfo>,
-    u_wins: HashSet<Wid>, // unmapped windows
-    m_wins: HashSet<Wid>, // mapped windows
-    background: Wid,      // background window
+    wins: HashMap<Wid, WindowState>,
+    background: Wid, // background window
     layout: Box<dyn Layout>,
     border_visible: bool,
 }
 
 impl Screen {
-    pub fn new(ctx: Context, id: usize, monitor: MonitorInfo) -> Result<Self> {
+    pub fn new(ctx: Context, id: usize) -> Result<Self> {
         let background = {
-            debug!("monitor_info: {:?}", monitor);
             let wid = ctx.conn.generate_id()?;
             let aux = CreateWindowAux::new()
                 .background_pixel(0x148231)
@@ -40,16 +68,15 @@ impl Screen {
                 x11rb::COPY_DEPTH_FROM_PARENT,
                 wid,
                 ctx.root,
-                monitor.x,
-                monitor.y,
-                monitor.width,
-                monitor.height,
+                0,  // x
+                0,  // y
+                16, // w
+                16, // h
                 0,
                 WindowClass::INPUT_OUTPUT,
                 x11rb::COPY_FROM_PARENT,
                 &aux,
             )?;
-            ctx.conn.map_window(wid)?;
             ctx.conn.flush()?;
             wid
         };
@@ -59,9 +86,8 @@ impl Screen {
         Ok(Self {
             ctx,
             id,
-            monitor: Some(monitor),
-            u_wins: HashSet::new(),
-            m_wins: HashSet::new(),
+            monitor: None,
+            wins: HashMap::new(),
             background,
             layout: Box::new(layout),
             border_visible: false,
@@ -75,79 +101,104 @@ impl Screen {
             .width(monitor.width as u32)
             .height(monitor.height as u32);
         self.ctx.conn.configure_window(self.background, &aux)?;
-        self.ctx.conn.flush()?;
+
+        self.ctx.conn.map_window(self.background)?;
+        for (&win, state) in self.wins.iter() {
+            match state {
+                WindowState::Mapped | WindowState::Hidden => {
+                    self.ctx.conn.map_window(win)?;
+                }
+                _ => {}
+            }
+        }
 
         self.monitor = Some(monitor);
+        self.refresh_layout()?;
         Ok(())
     }
 
-    pub fn add_window(&mut self, wid: Wid, state: WindowState) {
-        match state {
-            WindowState::Mapped => {
-                self.m_wins.insert(wid);
-            }
-            WindowState::Unmapped => {
-                self.u_wins.insert(wid);
+    pub fn detach(&mut self) -> Result<()> {
+        self.monitor = None;
+
+        self.ctx.conn.unmap_window(self.background)?;
+        for (&win, state) in self.wins.iter_mut() {
+            match state {
+                WindowState::Mapped => {
+                    *state = WindowState::Hidden;
+                    self.ctx.conn.unmap_window(win)?;
+                }
+                _ => {}
             }
         }
+        self.ctx.conn.flush()?;
+
+        Ok(())
+    }
+
+    pub fn add_window(&mut self, wid: Wid, state: MappingState) {
+        self.wins.insert(wid, state.into());
     }
 
     pub fn refresh_layout(&mut self) -> Result<()> {
-        // FIXME
-        let wins: Vec<Wid> = self.m_wins.iter().copied().collect();
+        if self.monitor.is_none() {
+            return Ok(());
+        }
 
-        let mon = self.monitor.as_ref().expect("screen not visible");
+        let wins: Vec<Wid> = self
+            .wins
+            .iter()
+            .filter(is_mapped)
+            .map(|(wid, _)| wid)
+            .copied()
+            .collect();
+
+        let mon = self.monitor.as_ref().unwrap();
         self.layout.layout(mon, &wins, self.border_visible)?;
         Ok(())
     }
 
-    pub fn contains(&self, wid: Wid) -> Option<WindowState> {
-        if self.m_wins.contains(&wid) {
-            Some(WindowState::Mapped)
-        } else if self.u_wins.contains(&wid) {
-            Some(WindowState::Unmapped)
-        } else if wid == self.background {
-            Some(WindowState::Mapped)
+    pub fn contains(&self, wid: Wid) -> Option<MappingState> {
+        if wid == self.background {
+            Some(MappingState::Mapped)
         } else {
-            None
+            self.wins.get(&wid).copied().map(MappingState::from)
         }
     }
 
-    // FIXME: explicitly retains the focused window id
     pub fn focus_any(&mut self) -> Result<()> {
-        if let Some(&first) = self.m_wins.iter().next() {
-            self.ctx
-                .conn
-                .set_input_focus(InputFocus::POINTER_ROOT, first, x11rb::CURRENT_TIME)?;
-        } else {
-            self.ctx.conn.set_input_focus(
-                InputFocus::POINTER_ROOT,
-                self.background,
-                x11rb::CURRENT_TIME,
-            )?;
-        }
-        self.ctx.conn.flush()?;
+        debug!("screen {}: focus_any", self.id);
+        let win = match self
+            .wins
+            .iter()
+            .find(|(_, &state)| state == WindowState::Mapped || state == WindowState::Hidden)
+            .map(|(wid, _)| wid)
+        {
+            Some(&first) => first,
+            None => {
+                debug!("screen {}: focus background", self.id);
+                self.background
+            }
+        };
+        self.ctx.focus_window(win)?;
         Ok(())
     }
 
     pub fn focus_next(&mut self) -> Result<()> {
         let old = self.ctx.get_focused_window()?;
-        let new = if self.m_wins.contains(&old) {
-            self.m_wins
-                .iter()
-                .copied()
-                .cycle()
-                .skip_while(|&w| w != old)
-                .nth(1)
-        } else {
+        if !self.wins.contains_key(&old) {
             return self.focus_any();
-        };
+        }
 
-        if let Some(new) = new {
-            self.ctx
-                .conn
-                .set_input_focus(InputFocus::POINTER_ROOT, new, x11rb::CURRENT_TIME)?;
-            self.ctx.conn.flush()?;
+        let next = self
+            .wins
+            .keys()
+            .copied()
+            .cycle()
+            .skip_while(|&w| w != old)
+            .nth(1);
+
+        if let Some(next) = next {
+            self.ctx.focus_window(next)?;
         }
         Ok(())
     }
@@ -163,38 +214,50 @@ impl Screen {
 impl EventHandlerMethods for Screen {
     fn on_map_notify(&mut self, notif: MapNotifyEvent) -> Result<HandleResult> {
         let wid = notif.window;
-        match self.contains(wid) {
-            Some(WindowState::Mapped) => Ok(HandleResult::Consumed),
-            Some(WindowState::Unmapped) => {
-                self.u_wins.remove(&wid);
-                self.m_wins.insert(wid);
-                self.refresh_layout()?;
-                Ok(HandleResult::Consumed)
-            }
-            None => Ok(HandleResult::Ignored),
+
+        if self.contains(wid).is_none() {
+            return Ok(HandleResult::Ignored);
         }
+
+        if wid == self.background {
+            return Ok(HandleResult::Consumed);
+        }
+
+        // Newly mapped window
+        if let WindowState::Unmapped = self.wins[&wid] {
+            self.ctx.focus_window(wid)?;
+        }
+
+        self.wins.insert(wid, WindowState::Mapped); // update
+        self.refresh_layout()?;
+
+        Ok(HandleResult::Consumed)
     }
 
     fn on_unmap_notify(&mut self, notif: UnmapNotifyEvent) -> Result<HandleResult> {
         let wid = notif.window;
-        match self.contains(wid) {
-            Some(WindowState::Unmapped) => Ok(HandleResult::Consumed),
-            Some(WindowState::Mapped) => {
-                self.m_wins.remove(&wid);
-                self.u_wins.insert(wid);
-                self.refresh_layout()?;
-                Ok(HandleResult::Consumed)
-            }
-            None => Ok(HandleResult::Ignored),
+
+        if self.contains(wid).is_none() {
+            return Ok(HandleResult::Ignored);
         }
+
+        if wid == self.background {
+            return Ok(HandleResult::Consumed);
+        }
+
+        if let WindowState::Mapped = self.wins[&wid] {
+            self.wins.insert(wid, WindowState::Unmapped);
+        }
+        self.refresh_layout()?;
+
+        Ok(HandleResult::Consumed)
     }
 
     fn on_destroy_notify(&mut self, notif: DestroyNotifyEvent) -> Result<HandleResult> {
         let wid = notif.window;
         match self.contains(wid) {
-            Some(WindowState::Unmapped) | Some(WindowState::Mapped) => {
-                self.u_wins.remove(&wid);
-                self.m_wins.remove(&wid);
+            Some(..) => {
+                self.wins.remove(&wid);
                 Ok(HandleResult::Consumed)
             }
             None => Ok(HandleResult::Ignored),

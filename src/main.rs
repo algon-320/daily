@@ -23,6 +23,11 @@ pub enum Command {
     FocusNextMonitor,
     FocusPrevMonitor,
     OpenLauncher,
+    Screen1,
+    Screen2,
+    Screen3,
+    Screen4,
+    Screen5,
 }
 
 use error::{Error, Result};

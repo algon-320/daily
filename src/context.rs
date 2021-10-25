@@ -5,7 +5,7 @@ use crate::config::Config;
 use crate::error::{Error, Result};
 
 use x11rb::connection::Connection;
-use x11rb::protocol::xproto::{ConnectionExt as _, Window as Wid};
+use x11rb::protocol::xproto::{ConnectionExt as _, InputFocus, Window as Wid};
 use x11rb::rust_connection::RustConnection;
 
 #[derive(Debug, Clone)]
@@ -37,6 +37,14 @@ impl Context {
             config: Rc::new(config),
             root,
         })
+    }
+
+    pub fn focus_window(&self, win: Wid) -> Result<()> {
+        debug!("set_input_focus --> {}", win);
+        self.conn
+            .set_input_focus(InputFocus::POINTER_ROOT, win, x11rb::CURRENT_TIME)?;
+        self.conn.flush()?;
+        Ok(())
     }
 
     pub fn get_focused_window(&self) -> Result<Wid> {

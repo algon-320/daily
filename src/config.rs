@@ -5,6 +5,10 @@ use std::collections::HashMap;
 use std::convert::TryInto;
 
 //  KeyCode:
+//      1 = 10,
+//      2 = 11,
+//      3 = 12,
+//      ...
 //      Tab = 23,
 //      Q = 24,
 //      J = 44,
@@ -27,6 +31,12 @@ keybind = [
     { action = "Press",   mod = ["Super", "Shift"], key = 23,  command = "FocusPrev"},
     { action = "Press",   mod = [],                 key = 133, command = "ShowBorder"},
     { action = "Release", mod = ["Super"],          key = 133, command = "HideBorder"},
+
+    { action = "Press",   mod = ["Super"],          key = 10,  command = "Screen1"},
+    { action = "Press",   mod = ["Super"],          key = 11,  command = "Screen2"},
+    { action = "Press",   mod = ["Super"],          key = 12,  command = "Screen3"},
+    { action = "Press",   mod = ["Super"],          key = 13,  command = "Screen4"},
+    { action = "Press",   mod = ["Super"],          key = 14,  command = "Screen5"},
 ]
 
 [border]
