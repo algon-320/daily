@@ -22,7 +22,7 @@ $ DISPLAY=:2 cargo run --release
 |keys|command|
 |---------------|-------|
 |`Super`        |Show window border while pressing the key|
-|`Super` + `T`  |Open a terminal window|
+|`Super` + `T`  |Open a terminal window (`/usr/bin/xterm` as default)|
 |`Super` + `P`  |Open app launcher (`/usr/bin/dmenu_run` as default)|
 |`Super` + `Tab`|Focus the next window|
 |`Super` + `J`  |Focus the next monitor|
