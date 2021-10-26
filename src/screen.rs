@@ -147,7 +147,7 @@ impl Screen {
             .map(|(wid, _)| wid)
             .copied()
             .collect();
-        wins.sort();
+        wins.sort_unstable();
 
         let mon = self.monitor.as_ref().unwrap();
         self.layout.layout(mon, &wins, self.border_visible)?;
