@@ -1,5 +1,5 @@
 use log::debug;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use crate::context::Context;
 use crate::error::Result;
@@ -27,7 +27,7 @@ pub struct Screen {
     ctx: Context,
     pub id: usize,
     monitor: Option<MonitorInfo>,
-    wins: HashMap<Wid, WindowState>,
+    wins: BTreeMap<Wid, WindowState>,
     background: Wid, // background window
     layout: Box<dyn Layout>,
     border_visible: bool,
@@ -63,7 +63,7 @@ impl Screen {
             ctx,
             id,
             monitor: None,
-            wins: HashMap::new(),
+            wins: BTreeMap::new(),
             background,
             layout: Box::new(layout),
             border_visible: false,
