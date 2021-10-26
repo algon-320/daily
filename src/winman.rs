@@ -10,6 +10,7 @@ use crate::{Command, KeybindAction};
 use x11rb::protocol::{
     randr::{self, ConnectionExt as _},
     xproto::*,
+    xtest::ConnectionExt as _,
 };
 use Window as Wid;
 
@@ -294,6 +295,39 @@ impl WinMan {
         Ok(())
     }
 
+    fn move_pointer(&mut self, dx: i16, dy: i16) -> Result<()> {
+        self.ctx
+            .conn
+            .warp_pointer(x11rb::NONE, x11rb::NONE, 0, 0, 0, 0, dx, dy)?;
+        Ok(())
+    }
+
+    fn simulate_click(&mut self, button: u8, duration_ms: u32) -> Result<()> {
+        // button down
+        self.ctx.conn.xtest_fake_input(
+            BUTTON_PRESS_EVENT,
+            button,
+            x11rb::CURRENT_TIME,
+            x11rb::NONE,
+            0,
+            0,
+            0,
+        )?;
+
+        // button up
+        self.ctx.conn.xtest_fake_input(
+            BUTTON_RELEASE_EVENT,
+            button,
+            duration_ms,
+            x11rb::NONE,
+            0,
+            0,
+            0,
+        )?;
+
+        Ok(())
+    }
+
     fn process_command(&mut self, cmd: Command) -> Result<()> {
         match cmd {
             Command::Quit => return Err(Error::Quit),
@@ -369,34 +403,17 @@ impl WinMan {
             Command::MoveToScreen4 => self.move_window_to_screen(3)?,
             Command::MoveToScreen5 => self.move_window_to_screen(4)?,
 
-            Command::MovePointerUp => {
-                self.ctx
-                    .conn
-                    .warp_pointer(x11rb::NONE, x11rb::NONE, 0, 0, 0, 0, 0, -32)?;
-            }
-            Command::MovePointerDown => {
-                self.ctx
-                    .conn
-                    .warp_pointer(x11rb::NONE, x11rb::NONE, 0, 0, 0, 0, 0, 32)?;
-            }
-            Command::MovePointerLeft => {
-                self.ctx
-                    .conn
-                    .warp_pointer(x11rb::NONE, x11rb::NONE, 0, 0, 0, 0, -32, 0)?;
-            }
-            Command::MovePointerRight => {
-                self.ctx
-                    .conn
-                    .warp_pointer(x11rb::NONE, x11rb::NONE, 0, 0, 0, 0, 32, 0)?;
-            }
+            Command::MovePointerUp => self.move_pointer(0, -32)?,
+            Command::MovePointerDown => self.move_pointer(0, 32)?,
+            Command::MovePointerLeft => self.move_pointer(-32, 0)?,
+            Command::MovePointerRight => self.move_pointer(32, 0)?,
 
-            Command::MouseClickLeft => {
-                // FIXME: avoid dependence on xdotool
-                let _ = std::process::Command::new("sh")
-                    .arg("-c")
-                    .arg("xdotool click 1")
-                    .spawn();
-            }
+            Command::MovePointerUpLittle => self.move_pointer(0, -1)?,
+            Command::MovePointerDownLittle => self.move_pointer(0, 1)?,
+            Command::MovePointerLeftLittle => self.move_pointer(-1, 0)?,
+            Command::MovePointerRightLittle => self.move_pointer(1, 0)?,
+
+            Command::MouseClickLeft => self.simulate_click(1, 10)?, // left, 10ms
         }
         Ok(())
     }

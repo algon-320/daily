@@ -29,6 +29,10 @@ keybind = [
     { action = "Press",   mod = ["Super"],          key = 116, command = "MovePointerDown"},
     { action = "Press",   mod = ["Super"],          key = 113, command = "MovePointerLeft"},
     { action = "Press",   mod = ["Super"],          key = 114, command = "MovePointerRight"},
+    { action = "Press",   mod = ["Super", "Shift"], key = 111, command = "MovePointerUpLittle"},
+    { action = "Press",   mod = ["Super", "Shift"], key = 116, command = "MovePointerDownLittle"},
+    { action = "Press",   mod = ["Super", "Shift"], key = 113, command = "MovePointerLeftLittle"},
+    { action = "Press",   mod = ["Super", "Shift"], key = 114, command = "MovePointerRightLittle"},
 
     { action = "Press",   mod = ["Super"],          key = 36,  command = "MouseClickLeft"},
 ]

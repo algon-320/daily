@@ -39,6 +39,10 @@ pub enum Command {
     MovePointerDown,
     MovePointerLeft,
     MovePointerRight,
+    MovePointerUpLittle,
+    MovePointerDownLittle,
+    MovePointerLeftLittle,
+    MovePointerRightLittle,
     MouseClickLeft,
 }
 
