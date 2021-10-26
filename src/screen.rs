@@ -108,7 +108,7 @@ impl Screen {
     }
 
     pub fn add_window(&mut self, wid: Wid, state: WindowState) -> Result<()> {
-        debug!("add_window; wid={}, state={:?}", wid, state);
+        debug!("add_window: wid={}, state={:?}", wid, state);
         let state = if self.monitor.is_none() && state == WindowState::Mapped {
             WindowState::Hidden
         } else {

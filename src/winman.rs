@@ -116,12 +116,9 @@ impl WinMan {
             first.add_window(wid, state)?;
         }
 
-        // Focus the first window
-        if let Some(&wid) = preexist.first() {
-            self.change_focus(wid)?;
-        }
-
+        // Focus the first monitor
         self.focused_monitor = 0;
+        self.focused_monitor_mut().screen.focus_any()?;
 
         self.refresh_layout()?;
 
