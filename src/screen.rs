@@ -140,13 +140,14 @@ impl Screen {
             return Ok(());
         }
 
-        let wins: Vec<Wid> = self
+        let mut wins: Vec<Wid> = self
             .wins
             .iter()
             .filter(is_mapped)
             .map(|(wid, _)| wid)
             .copied()
             .collect();
+        wins.sort();
 
         let mon = self.monitor.as_ref().unwrap();
         self.layout.layout(mon, &wins, self.border_visible)?;
