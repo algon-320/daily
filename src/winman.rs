@@ -186,11 +186,13 @@ impl WinMan {
         let focus = self.ctx.get_focused_window()?;
         debug!("focused_win = {:?}", focus);
         if let Some(focused_win) = focus {
-            self.focused_screen = self
+            if let Some(screen_id) = self
                 .screens
                 .iter()
                 .position(|screen| screen.contains(focused_win).is_some())
-                .unwrap();
+            {
+                self.focused_screen = screen_id;
+            }
         }
         self.refresh_layout()?;
         Ok(())
@@ -430,7 +432,7 @@ impl EventHandlerMethods for WinMan {
             .conn
             .allow_events(Allow::REPLAY_POINTER, x11rb::CURRENT_TIME)?
             .check()?;
-        if e.child != x11rb::NONE {
+        if e.child != x11rb::NONE && self.screens.iter().any(|s| s.contains(e.child).is_some()) {
             self.change_focus(e.child)?;
             Ok(HandleResult::Consumed)
         } else {
