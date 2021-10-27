@@ -34,6 +34,16 @@ pub struct Screen {
     border_visible: bool,
 }
 
+impl std::fmt::Debug for Screen {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if f.alternate() {
+            write!(f, "Screen {{ id: {}, monitor: {:#?}, wins: {:#?}, background: {}, layout: {}, border_visible: {} }}", self.id, self.monitor, self.wins, self.background, self.layout.name(), self.border_visible)
+        } else {
+            write!(f, "Screen {{ id: {}, monitor: {:?}, wins: {:?}, background: {}, layout: {}, border_visible: {} }}", self.id, self.monitor, self.wins, self.background, self.layout.name(), self.border_visible)
+        }
+    }
+}
+
 impl Screen {
     pub fn new(ctx: Context, id: usize) -> Result<Self> {
         let background = {

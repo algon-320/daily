@@ -8,6 +8,8 @@ use Window as Wid;
 
 pub trait Layout {
     fn layout(&mut self, mon: &MonitorInfo, windows: &[Wid], border_visible: bool) -> Result<()>;
+
+    fn name(&self) -> &'static str;
 }
 
 #[derive(Debug)]
@@ -22,6 +24,10 @@ impl HorizontalLayout {
 }
 
 impl Layout for HorizontalLayout {
+    fn name(&self) -> &'static str {
+        "horizontal"
+    }
+
     fn layout(&mut self, mon: &MonitorInfo, windows: &[Wid], border_visible: bool) -> Result<()> {
         if windows.is_empty() {
             return Ok(());
@@ -80,6 +86,10 @@ impl HorizontalLayoutWithBorder {
 }
 
 impl Layout for HorizontalLayoutWithBorder {
+    fn name(&self) -> &'static str {
+        "horizontal-with-border"
+    }
+
     fn layout(&mut self, mon: &MonitorInfo, windows: &[Wid], _: bool) -> Result<()> {
         self.base.layout(mon, windows, true)
     }
