@@ -5,9 +5,10 @@ use crate::context::Context;
 use crate::error::Result;
 use crate::event::{EventHandlerMethods, HandleResult};
 use crate::layout::{HorizontalLayout, Layout};
+use crate::winman::Monitor;
 
 use x11rb::connection::Connection;
-use x11rb::protocol::{randr::MonitorInfo, xproto::*};
+use x11rb::protocol::xproto::*;
 use Window as Wid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -26,7 +27,7 @@ fn is_mapped<'a>(&(_, &state): &(&'a Wid, &'a WindowState)) -> bool {
 pub struct Screen {
     ctx: Context,
     pub id: usize,
-    monitor: Option<MonitorInfo>,
+    monitor: Option<Monitor>,
     wins: BTreeMap<Wid, WindowState>,
     background: Wid, // background window
     layout: Box<dyn Layout>,
@@ -70,21 +71,18 @@ impl Screen {
         })
     }
 
-    pub fn attach(&mut self, monitor: MonitorInfo) -> Result<()> {
+    pub fn attach(&mut self, monitor: Monitor) -> Result<()> {
         let aux = ConfigureWindowAux::new()
-            .x(monitor.x as i32)
-            .y(monitor.y as i32)
-            .width(monitor.width as u32)
-            .height(monitor.height as u32);
+            .x(monitor.info.x as i32)
+            .y(monitor.info.y as i32)
+            .width(monitor.info.width as u32)
+            .height(monitor.info.height as u32);
         self.ctx.conn.configure_window(self.background, &aux)?;
 
         self.ctx.conn.map_window(self.background)?;
         for (&win, state) in self.wins.iter() {
-            match state {
-                WindowState::Mapped | WindowState::Hidden => {
-                    self.ctx.conn.map_window(win)?;
-                }
-                _ => {}
+            if let WindowState::Mapped | WindowState::Hidden = state {
+                self.ctx.conn.map_window(win)?;
             }
         }
 
@@ -93,8 +91,12 @@ impl Screen {
         Ok(())
     }
 
-    pub fn detach(&mut self) -> Result<()> {
-        self.monitor = None;
+    pub fn detach(&mut self) -> Result<Option<Monitor>> {
+        if self.monitor.is_none() {
+            return Ok(None);
+        }
+
+        let info = self.monitor.take().unwrap();
 
         self.ctx.conn.unmap_window(self.background)?;
         for (&win, state) in self.wins.iter_mut() {
@@ -104,7 +106,11 @@ impl Screen {
             }
         }
 
-        Ok(())
+        Ok(Some(info))
+    }
+
+    pub fn monitor(&self) -> Option<Monitor> {
+        self.monitor.clone()
     }
 
     pub fn add_window(&mut self, wid: Wid, state: WindowState) -> Result<()> {
@@ -150,7 +156,7 @@ impl Screen {
         wins.sort_unstable();
 
         let mon = self.monitor.as_ref().unwrap();
-        self.layout.layout(mon, &wins, self.border_visible)?;
+        self.layout.layout(&mon.info, &wins, self.border_visible)?;
         Ok(())
     }
 
@@ -258,6 +264,9 @@ impl EventHandlerMethods for Screen {
         let wid = notif.window;
         match self.contains(wid) {
             Some(..) => {
+                if wid == self.ctx.get_focused_window()? {
+                    self.focus_next()?;
+                }
                 self.wins.remove(&wid);
                 Ok(HandleResult::Consumed)
             }

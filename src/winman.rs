@@ -1,5 +1,4 @@
 use log::{debug, info, warn};
-use std::collections::hash_map::{Entry as HashMapEntry, HashMap};
 
 use crate::context::Context;
 use crate::error::{Error, Result};
@@ -16,27 +15,27 @@ use Window as Wid;
 
 const MAX_SCREENS: usize = 10;
 
-#[derive()]
-struct Monitor {
-    info: randr::MonitorInfo,
-    screen: Box<Screen>,
+#[derive(Debug, Clone)]
+pub struct Monitor {
+    pub id: usize,
+    pub info: randr::MonitorInfo,
 }
 
 #[derive()]
 pub struct WinMan {
     ctx: Context,
-    monitors: Vec<Monitor>,
-    screens: HashMap<usize, Box<Screen>>,
-    focused_monitor: usize,
+    screens: Vec<Screen>,
+    monitor_num: usize,
+    focused_screen: usize,
 }
 
 impl WinMan {
     pub fn new(ctx: Context) -> Result<Self> {
         let mut wm = Self {
             ctx,
-            monitors: Vec::new(),
-            screens: HashMap::new(),
-            focused_monitor: 0,
+            screens: Vec::new(),
+            monitor_num: 0,
+            focused_screen: 0,
         };
         wm.init()?;
         Ok(wm)
@@ -101,8 +100,7 @@ impl WinMan {
         // Setup monitors
         self.setup_monitor()?;
 
-        let first_mon = self.monitors.get_mut(0).expect("no monitor");
-        let first = &mut first_mon.screen;
+        let first = self.screens.get_mut(0).expect("no screen");
 
         // Put all pre-existing windows on the first screen.
         for &wid in preexist.iter() {
@@ -118,8 +116,8 @@ impl WinMan {
         }
 
         // Focus the first monitor
-        self.focused_monitor = 0;
-        self.focused_monitor_mut().screen.focus_any()?;
+        self.focused_screen = 0;
+        self.focused_screen_mut().focus_any()?;
 
         self.refresh_layout()?;
 
@@ -132,65 +130,44 @@ impl WinMan {
             .conn
             .randr_get_monitors(self.ctx.root, true)?
             .reply()?;
+        self.monitor_num = monitors_reply.monitors.len();
 
-        for mon in self.monitors.drain(..) {
-            let mut screen = mon.screen;
+        for screen in self.screens.iter_mut() {
             screen.detach()?;
-            self.screens.insert(screen.id, screen);
         }
 
-        for id in 0..MAX_SCREENS {
-            if let HashMapEntry::Vacant(entry) = self.screens.entry(id) {
-                let screen = Screen::new(self.ctx.clone(), id)?;
-                entry.insert(Box::new(screen));
-            }
+        for id in self.screens.len()..std::cmp::max(self.monitor_num, MAX_SCREENS) {
+            let screen = Screen::new(self.ctx.clone(), id)?;
+            self.screens.push(screen);
         }
 
-        self.monitors = monitors_reply
-            .monitors
-            .into_iter()
-            .enumerate()
-            .map(|(id, info)| {
-                let mut screen = self.screens.remove(&id).unwrap();
-                screen.attach(info.clone())?;
-                Ok(Monitor { info, screen })
-            })
-            .collect::<Result<_>>()?;
-
-        if self.monitors.is_empty() {
-            return Err(Error::NoMonitor);
+        for (id, info) in monitors_reply.monitors.into_iter().enumerate() {
+            let screen = self.screens.get_mut(id).unwrap();
+            screen.attach(Monitor { id, info })?;
         }
-
         Ok(())
     }
 
     fn refresh_layout(&mut self) -> Result<()> {
-        for mon in self.monitors.iter_mut() {
-            mon.screen.refresh_layout()?;
+        for screen in self.screens.iter_mut() {
+            screen.refresh_layout()?;
         }
         Ok(())
     }
 
-    fn focused_monitor_mut(&mut self) -> &mut Monitor {
-        self.monitors.get_mut(self.focused_monitor).unwrap()
+    fn focused_screen_mut(&mut self) -> &mut Screen {
+        self.screens.get_mut(self.focused_screen).unwrap()
     }
 
     fn find_screen_mut<P>(&mut self, pred: P) -> Option<&mut Screen>
     where
         P: Fn(&Screen) -> bool,
     {
-        for mon in self.monitors.iter_mut() {
-            if pred(&mon.screen) {
-                return Some(&mut mon.screen);
-            }
-        }
-
-        for screen in self.screens.values_mut() {
+        for screen in self.screens.iter_mut() {
             if pred(screen) {
                 return Some(screen);
             }
         }
-
         None
     }
 
@@ -209,10 +186,10 @@ impl WinMan {
         let focused_win = self.ctx.get_focused_window()?;
         debug!("focused_win = {}", focused_win);
         if focused_win != InputFocus::POINTER_ROOT.into() {
-            self.focused_monitor = self
-                .monitors
+            self.focused_screen = self
+                .screens
                 .iter()
-                .position(|mon| mon.screen.contains(focused_win).is_some())
+                .position(|screen| screen.contains(focused_win).is_some())
                 .unwrap();
         }
         self.refresh_layout()?;
@@ -223,24 +200,14 @@ impl WinMan {
         debug_assert!(id < MAX_SCREENS);
 
         debug!("switch to screen: {}", id);
-        if self.screens.contains_key(&id) {
-            let mon = self.focused_monitor_mut();
-            mon.screen.detach()?;
-
-            let new = self.screens.remove(&id).unwrap();
-
-            let mon = self.focused_monitor_mut();
-            let old = std::mem::replace(&mut mon.screen, new);
-            mon.screen.attach(mon.info.clone())?;
-
-            self.screens.insert(old.id, old);
+        if self.screens[id].monitor().is_none() {
+            let old = self.focused_screen_mut();
+            let mon_info = old.detach()?.expect("focus inconsistent");
+            let new = self.screens.get_mut(id).unwrap();
+            new.attach(mon_info)?;
         } else {
-            let a = self.focused_monitor;
-            let b = self
-                .monitors
-                .iter()
-                .position(|mon| mon.screen.id == id)
-                .unwrap();
+            let a = self.focused_screen;
+            let b = self.screens.iter().position(|sc| sc.id == id).unwrap();
 
             // no swap needed
             if a == b {
@@ -248,27 +215,23 @@ impl WinMan {
             }
 
             // perfom swap
-            {
-                use std::cmp::{max, min};
-                let (a, b) = (min(a, b), max(a, b));
+            use std::cmp::{max, min};
+            let (a, b) = (min(a, b), max(a, b));
 
-                let (_, mons) = self.monitors.split_at_mut(a);
-                let (mon_a, mon_b) = mons.split_at_mut(b - a);
-                let mon_a = &mut mon_a[0];
-                let mon_b = &mut mon_b[0];
+            let (_, scrs) = self.screens.split_at_mut(a);
+            let (screen_a, screen_b) = scrs.split_at_mut(b - a);
+            let screen_a = &mut screen_a[0];
+            let screen_b = &mut screen_b[0];
 
-                mon_a.screen.detach()?;
-                mon_b.screen.detach()?;
+            let mon_a = screen_a.detach()?.expect("focus inconsistent");
+            let mon_b = screen_b.detach()?.expect("focus inconsistent");
 
-                std::mem::swap(&mut mon_a.screen, &mut mon_b.screen);
-
-                mon_a.screen.attach(mon_a.info.clone())?;
-                mon_b.screen.attach(mon_b.info.clone())?;
-            }
+            screen_a.attach(mon_b)?;
+            screen_b.attach(mon_a)?;
         }
 
-        let mon = self.focused_monitor_mut();
-        mon.screen.focus_any()?;
+        self.focused_screen = id;
+        self.focused_screen_mut().focus_any()?;
         self.focus_changed()?;
         Ok(())
     }
@@ -280,13 +243,13 @@ impl WinMan {
         debug!("move_window_to_screen: wid = {}", wid);
 
         if wid != InputFocus::POINTER_ROOT.into() {
-            let mon = self.focused_monitor_mut();
+            let screen = self.focused_screen_mut();
 
-            let state = mon.screen.forget_window(wid)?;
-            mon.screen.focus_any()?;
+            let state = screen.forget_window(wid)?;
+            screen.focus_any()?;
             self.focus_changed()?;
 
-            if let Some(screen) = self.find_screen_mut(|screen| screen.id == id) {
+            if let Some(screen) = self.screens.get_mut(id) {
                 screen.add_window(wid, state)?;
                 return Ok(());
             }
@@ -333,19 +296,13 @@ impl WinMan {
             Command::Quit => return Err(Error::Quit),
 
             Command::ShowBorder => {
-                for mon in self.monitors.iter_mut() {
-                    mon.screen.show_border();
-                }
-                for screen in self.screens.values_mut() {
+                for screen in self.screens.iter_mut() {
                     screen.show_border();
                 }
                 self.refresh_layout()?;
             }
             Command::HideBorder => {
-                for mon in self.monitors.iter_mut() {
-                    mon.screen.hide_border();
-                }
-                for screen in self.screens.values_mut() {
+                for screen in self.screens.iter_mut() {
                     screen.hide_border();
                 }
                 self.refresh_layout()?;
@@ -359,8 +316,7 @@ impl WinMan {
             }
 
             Command::FocusNext => {
-                let mon = self.focused_monitor_mut();
-                mon.screen.focus_next()?;
+                self.focused_screen_mut().focus_next()?;
                 self.focus_changed()?;
             }
             Command::FocusPrev => {
@@ -368,10 +324,20 @@ impl WinMan {
             }
 
             Command::FocusNextMonitor => {
-                // FIXME
-                self.focused_monitor = (self.focused_monitor + 1) % self.monitors.len();
-                let next_mon = self.focused_monitor_mut();
-                next_mon.screen.focus_any()?;
+                let focused_monitor = self
+                    .focused_screen_mut()
+                    .monitor()
+                    .expect("focus inconsistent")
+                    .id;
+                let next_monitor = (focused_monitor + 1) % self.monitor_num;
+
+                let screen = self
+                    .find_screen_mut(|screen| {
+                        screen.monitor().map(|mon| mon.id) == Some(next_monitor)
+                    })
+                    .unwrap();
+                screen.focus_any()?;
+
                 self.focus_changed()?;
             }
             Command::FocusPrevMonitor => {
@@ -463,8 +429,8 @@ impl EventHandlerMethods for WinMan {
 
     fn on_create_notify(&mut self, notif: CreateNotifyEvent) -> Result<HandleResult> {
         if !notif.override_redirect {
-            let mon = self.focused_monitor_mut();
-            mon.screen.add_window(notif.window, WindowState::Created)?;
+            let screen = self.focused_screen_mut();
+            screen.add_window(notif.window, WindowState::Created)?;
 
             Ok(HandleResult::Consumed)
         } else {
@@ -497,7 +463,9 @@ impl EventHandlerMethods for WinMan {
 
     fn on_destroy_notify(&mut self, notif: DestroyNotifyEvent) -> Result<HandleResult> {
         if let Some(screen) = self.container_of_mut(notif.window) {
-            return screen.on_destroy_notify(notif);
+            let res = screen.on_destroy_notify(notif);
+            self.focus_changed()?;
+            return res;
         }
         Ok(HandleResult::Ignored)
     }
@@ -509,8 +477,7 @@ impl EventHandlerMethods for WinMan {
     fn on_focus_in(&mut self, focus_in: FocusInEvent) -> Result<HandleResult> {
         if focus_in.event == self.ctx.root {
             if focus_in.detail == NotifyDetail::POINTER_ROOT {
-                let mon = self.focused_monitor_mut();
-                mon.screen.focus_any()?;
+                self.focused_screen_mut().focus_any()?;
             }
             return Ok(HandleResult::Consumed);
         }
