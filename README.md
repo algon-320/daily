@@ -26,6 +26,7 @@ $ DISPLAY=:2 cargo run --release
 |`Super` + `P`  |Open app launcher (`/usr/bin/dmenu_run` as default)|
 |`Super` + `Tab`|Focus the next window|
 |`Super` + `J`  |Focus the next monitor|
+|`Super` + `K`  |Focus the previous monitor|
 |`Super` + `C`  |Close the focused window|
 |`Super` + `1` (num) |Switch (virtual) screen|
 |`Super` + `Shift` + `1` (num) |Move the focused window to the specified (virtual) screen|

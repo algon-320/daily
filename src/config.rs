@@ -38,6 +38,9 @@ keybind = [
     { action = "Press",   mod = ["Super"],          key = 28,  command = "OpenTerminal"},
     { action = "Press",   mod = ["Super"],          key = 23,  command = "FocusNext"},
     { action = "Press",   mod = ["Super", "Shift"], key = 23,  command = "FocusPrev"},
+    { action = "Press",   mod = ["Super"],          key = 44,  command = "FocusNextMonitor"},
+    { action = "Press",   mod = ["Super"],          key = 45,  command = "FocusPrevMonitor"},
+
     { action = "Press",   mod = [],                 key = 133, command = "ShowBorder"},
     { action = "Release", mod = ["Super"],          key = 133, command = "HideBorder"},
 

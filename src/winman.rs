@@ -338,7 +338,21 @@ impl WinMan {
                 self.focus_changed()?;
             }
             Command::FocusPrevMonitor => {
-                warn!("Command::FocusPrevMonitor: not yet implemented");
+                let focused_monitor = self
+                    .focused_screen_mut()
+                    .monitor()
+                    .expect("focus inconsistent")
+                    .id;
+                let next_monitor = (focused_monitor + self.monitor_num - 1) % self.monitor_num;
+
+                let screen = self
+                    .find_screen_mut(|screen| {
+                        screen.monitor().map(|mon| mon.id) == Some(next_monitor)
+                    })
+                    .unwrap();
+                screen.focus_any()?;
+
+                self.focus_changed()?;
             }
 
             Command::OpenLauncher => {
