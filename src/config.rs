@@ -29,6 +29,7 @@ use std::convert::TryInto;
 const DEFAULT_CONFIG: &str = r###"
 launcher = "/usr/bin/dmenu_run"
 terminal = "/usr/bin/xterm"
+background_color = "#148231"
 
 keybind = [
     { action = "Press",   mod = ["Super", "Shift"], key = 24,  command = "Quit"},
@@ -120,6 +121,7 @@ mod parse {
         launcher: String,
         terminal: String,
         border: BorderConfig,
+        background_color: String,
     }
 
     fn parse_color(hex: &str) -> Result<u32> {
@@ -155,11 +157,14 @@ mod parse {
             let launcher = toml_repr.launcher;
             let terminal = toml_repr.terminal;
 
+            let background_color = parse_color(&toml_repr.background_color)?;
+
             Ok(Config {
                 keybind,
                 launcher,
                 terminal,
                 border: toml_repr.border.try_into()?,
+                background_color,
             })
         }
     }
@@ -178,6 +183,7 @@ pub struct Config {
     pub launcher: String,
     pub terminal: String,
     pub border: BorderConfig,
+    pub background_color: u32,
 }
 
 impl Config {

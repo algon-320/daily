@@ -1,5 +1,6 @@
 launcher = "/usr/bin/dmenu_run"
 terminal = "/usr/bin/xterm"
+background_color = "#148231"
 
 keybind = [
     { action = "Press",   mod = ["Super", "Shift"], key = 24,  command = "Quit"},

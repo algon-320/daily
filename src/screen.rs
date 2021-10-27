@@ -38,7 +38,7 @@ impl Screen {
         let background = {
             let wid = ctx.conn.generate_id()?;
             let aux = CreateWindowAux::new()
-                .background_pixel(0x148231)
+                .background_pixel(ctx.config.background_color)
                 .event_mask(EventMask::FOCUS_CHANGE)
                 .override_redirect(1); // special window
             ctx.conn.create_window(
