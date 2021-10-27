@@ -27,7 +27,7 @@ impl Layout for HorizontalLayout {
             return Ok(());
         }
 
-        let focused = self.ctx.get_focused_window()?;
+        let focus = self.ctx.get_focused_window()?;
 
         let count = windows.len();
         let w = (mon.width / count as u16) as u32;
@@ -40,7 +40,7 @@ impl Layout for HorizontalLayout {
             let border_conf = self.ctx.config.border;
 
             if border_visible {
-                let color = if wid == focused {
+                let color = if Some(wid) == focus {
                     border_conf.color_focused
                 } else {
                     border_conf.color_regular

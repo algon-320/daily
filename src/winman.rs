@@ -183,9 +183,9 @@ impl WinMan {
     }
 
     fn focus_changed(&mut self) -> Result<()> {
-        let focused_win = self.ctx.get_focused_window()?;
-        debug!("focused_win = {}", focused_win);
-        if focused_win != InputFocus::POINTER_ROOT.into() {
+        let focus = self.ctx.get_focused_window()?;
+        debug!("focused_win = {:?}", focus);
+        if let Some(focused_win) = focus {
             self.focused_screen = self
                 .screens
                 .iter()
@@ -239,10 +239,8 @@ impl WinMan {
     fn move_window_to_screen(&mut self, id: usize) -> Result<()> {
         debug_assert!(id < MAX_SCREENS);
 
-        let wid = self.ctx.get_focused_window()?;
-        debug!("move_window_to_screen: wid = {}", wid);
-
-        if wid != InputFocus::POINTER_ROOT.into() {
+        if let Some(wid) = self.ctx.get_focused_window()? {
+            debug!("move_window_to_screen: wid = {}", wid);
             let screen = self.focused_screen_mut();
 
             let state = screen.forget_window(wid)?;
@@ -309,8 +307,7 @@ impl WinMan {
             }
 
             Command::Close => {
-                let focused = self.ctx.get_focused_window()?;
-                if focused != InputFocus::POINTER_ROOT.into() {
+                if let Some(focused) = self.ctx.get_focused_window()? {
                     self.ctx.conn.destroy_window(focused)?;
                 }
             }

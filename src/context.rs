@@ -46,7 +46,12 @@ impl Context {
         Ok(())
     }
 
-    pub fn get_focused_window(&self) -> Result<Wid> {
-        Ok(self.conn.get_input_focus()?.reply()?.focus)
+    pub fn get_focused_window(&self) -> Result<Option<Wid>> {
+        fn is_window(wid: Wid) -> bool {
+            wid != InputFocus::POINTER_ROOT.into() && wid != InputFocus::NONE.into()
+        }
+
+        let focus = self.conn.get_input_focus()?.reply()?.focus;
+        Ok(if is_window(focus) { Some(focus) } else { None })
     }
 }

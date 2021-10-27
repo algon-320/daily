@@ -187,7 +187,10 @@ impl Screen {
     }
 
     pub fn focus_next(&mut self) -> Result<()> {
-        let old = self.ctx.get_focused_window()?;
+        let old = self
+            .ctx
+            .get_focused_window()?
+            .unwrap_or_else(|| InputFocus::NONE.into());
         if !self.wins.contains_key(&old) {
             return self.focus_any();
         }
@@ -264,7 +267,7 @@ impl EventHandlerMethods for Screen {
         let wid = notif.window;
         match self.contains(wid) {
             Some(..) => {
-                if wid == self.ctx.get_focused_window()? {
+                if Some(wid) == self.ctx.get_focused_window()? {
                     self.focus_next()?;
                 }
                 self.wins.remove(&wid);
