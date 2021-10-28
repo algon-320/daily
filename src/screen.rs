@@ -86,7 +86,8 @@ impl Screen {
             .x(monitor.info.x as i32)
             .y(monitor.info.y as i32)
             .width(monitor.info.width as u32)
-            .height(monitor.info.height as u32);
+            .height(monitor.info.height as u32)
+            .stack_mode(StackMode::BELOW);
         self.ctx.conn.configure_window(self.background, &aux)?;
 
         self.ctx.conn.map_window(self.background)?;
