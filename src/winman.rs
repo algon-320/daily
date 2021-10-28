@@ -119,6 +119,8 @@ impl WinMan {
         self.focused_screen = 0;
         self.focused_screen_mut().focus_any()?;
 
+        debug!("screen 0: {:#?}", self.screens[0]);
+
         self.refresh_layout()?;
 
         Ok(())

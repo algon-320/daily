@@ -70,13 +70,17 @@ where
 fn main() {
     env_logger::init();
 
+    use std::process::exit;
+
     info!("hello");
     match start(None) {
         Ok(()) | Err(Error::Quit) => {
             info!("goodbye");
+            exit(0);
         }
         Err(err) => {
             error!("{}", err);
+            exit(1);
         }
     }
 }
