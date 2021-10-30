@@ -19,7 +19,7 @@ $ DISPLAY=:2 cargo run --release
 
 ## Keybindings
 
-You can configure the keybinding by copying `config.toml` to `~/.config/daily/config.toml` and editting it.
+You can configure the keybinding by copying `config.yml` to `~/.config/daily/config.yml` and editting it.
 
 By default, the WM uses following keybindings:
 

@@ -367,28 +367,9 @@ impl WinMan {
             Command::OpenLauncher => self.launch_app(&self.ctx.config.launcher)?,
             Command::OpenTerminal => self.launch_app(&self.ctx.config.terminal)?,
 
-            Command::Screen1 => self.switch_screen(0)?,
-            Command::Screen2 => self.switch_screen(1)?,
-            Command::Screen3 => self.switch_screen(2)?,
-            Command::Screen4 => self.switch_screen(3)?,
-            Command::Screen5 => self.switch_screen(4)?,
-
-            Command::MoveToScreen1 => self.move_window_to_screen(0)?,
-            Command::MoveToScreen2 => self.move_window_to_screen(1)?,
-            Command::MoveToScreen3 => self.move_window_to_screen(2)?,
-            Command::MoveToScreen4 => self.move_window_to_screen(3)?,
-            Command::MoveToScreen5 => self.move_window_to_screen(4)?,
-
-            Command::MovePointerUp => self.move_pointer(0, -32)?,
-            Command::MovePointerDown => self.move_pointer(0, 32)?,
-            Command::MovePointerLeft => self.move_pointer(-32, 0)?,
-            Command::MovePointerRight => self.move_pointer(32, 0)?,
-
-            Command::MovePointerUpLittle => self.move_pointer(0, -1)?,
-            Command::MovePointerDownLittle => self.move_pointer(0, 1)?,
-            Command::MovePointerLeftLittle => self.move_pointer(-1, 0)?,
-            Command::MovePointerRightLittle => self.move_pointer(1, 0)?,
-
+            Command::Screen(id) => self.switch_screen(id)?,
+            Command::MoveToScreen(id) => self.move_window_to_screen(id)?,
+            Command::MovePointerRel(dx, dy) => self.move_pointer(dx, dy)?,
             Command::MouseClickLeft => self.simulate_click(1, 10)?, // left, 10ms
         }
         Ok(())

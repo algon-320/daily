@@ -24,25 +24,9 @@ pub enum Command {
     FocusPrevMonitor,
     OpenLauncher,
     OpenTerminal,
-    Screen1,
-    Screen2,
-    Screen3,
-    Screen4,
-    Screen5,
-    MoveToScreen1,
-    MoveToScreen2,
-    MoveToScreen3,
-    MoveToScreen4,
-    MoveToScreen5,
-
-    MovePointerUp,
-    MovePointerDown,
-    MovePointerLeft,
-    MovePointerRight,
-    MovePointerUpLittle,
-    MovePointerDownLittle,
-    MovePointerLeftLittle,
-    MovePointerRightLittle,
+    Screen(usize),
+    MoveToScreen(usize),
+    MovePointerRel(i16, i16), // (dx, dy)
     MouseClickLeft,
 }
 

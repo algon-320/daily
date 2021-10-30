@@ -27,51 +27,49 @@ use std::convert::TryInto;
 //      Right = 114,
 
 const DEFAULT_CONFIG: &str = r###"
-launcher = "/usr/bin/dmenu_run"
-terminal = "/usr/bin/xterm"
-background_color = "#148231"
+launcher: /usr/bin/dmenu_run
+terminal: /usr/bin/xterm
+background_color: '#148231'
+border:
+    width: 1
+    color_focused: '#FF8882'
+    color_regular: '#505050'
 
-keybind = [
-    { action = "Press",   mod = ["Super", "Shift"], key = 24,  command = "Quit"},
-    { action = "Press",   mod = ["Super"],          key = 54,  command = "Close"},
-    { action = "Press",   mod = ["Super"],          key = 33,  command = "OpenLauncher"},
-    { action = "Press",   mod = ["Super"],          key = 28,  command = "OpenTerminal"},
-    { action = "Press",   mod = ["Super"],          key = 23,  command = "FocusNext"},
-    { action = "Press",   mod = ["Super", "Shift"], key = 23,  command = "FocusPrev"},
-    { action = "Press",   mod = ["Super"],          key = 44,  command = "FocusNextMonitor"},
-    { action = "Press",   mod = ["Super"],          key = 45,  command = "FocusPrevMonitor"},
+keybind:
+    - { action: Press,   mod: [Super, Shift], key: 24,  command: Quit }
+    - { action: Press,   mod: [Super],        key: 54,  command: Close }
+    - { action: Press,   mod: [Super],        key: 33,  command: OpenLauncher }
+    - { action: Press,   mod: [Super],        key: 28,  command: OpenTerminal }
+    - { action: Press,   mod: [Super],        key: 23,  command: FocusNext }
+    - { action: Press,   mod: [Super, Shift], key: 23,  command: FocusPrev }
+    - { action: Press,   mod: [Super],        key: 44,  command: FocusNextMonitor }
+    - { action: Press,   mod: [Super],        key: 45,  command: FocusPrevMonitor }
 
-    { action = "Press",   mod = [],                 key = 133, command = "ShowBorder"},
-    { action = "Release", mod = ["Super"],          key = 133, command = "HideBorder"},
+    - { action: Press,   mod: [],             key: 133, command: ShowBorder }
+    - { action: Release, mod: [Super],        key: 133, command: HideBorder }
 
-    { action = "Press",   mod = ["Super"],          key = 10,  command = "Screen1"},
-    { action = "Press",   mod = ["Super"],          key = 11,  command = "Screen2"},
-    { action = "Press",   mod = ["Super"],          key = 12,  command = "Screen3"},
-    { action = "Press",   mod = ["Super"],          key = 13,  command = "Screen4"},
-    { action = "Press",   mod = ["Super"],          key = 14,  command = "Screen5"},
+    - { action: Press,   mod: [Super],        key: 10,  command: {Screen: 0} }
+    - { action: Press,   mod: [Super],        key: 11,  command: {Screen: 1} }
+    - { action: Press,   mod: [Super],        key: 12,  command: {Screen: 2} }
+    - { action: Press,   mod: [Super],        key: 13,  command: {Screen: 3} }
+    - { action: Press,   mod: [Super],        key: 14,  command: {Screen: 4} }
 
-    { action = "Press",   mod = ["Super", "Shift"], key = 10,  command = "MoveToScreen1"},
-    { action = "Press",   mod = ["Super", "Shift"], key = 11,  command = "MoveToScreen2"},
-    { action = "Press",   mod = ["Super", "Shift"], key = 12,  command = "MoveToScreen3"},
-    { action = "Press",   mod = ["Super", "Shift"], key = 13,  command = "MoveToScreen4"},
-    { action = "Press",   mod = ["Super", "Shift"], key = 14,  command = "MoveToScreen5"},
+    - { action: Press,   mod: [Super, Shift], key: 10,  command: {MoveToScreen: 0} }
+    - { action: Press,   mod: [Super, Shift], key: 11,  command: {MoveToScreen: 1} }
+    - { action: Press,   mod: [Super, Shift], key: 12,  command: {MoveToScreen: 2} }
+    - { action: Press,   mod: [Super, Shift], key: 13,  command: {MoveToScreen: 3} }
+    - { action: Press,   mod: [Super, Shift], key: 14,  command: {MoveToScreen: 4} }
 
-    { action = "Press",   mod = ["Super"],          key = 111, command = "MovePointerUp"},
-    { action = "Press",   mod = ["Super"],          key = 116, command = "MovePointerDown"},
-    { action = "Press",   mod = ["Super"],          key = 113, command = "MovePointerLeft"},
-    { action = "Press",   mod = ["Super"],          key = 114, command = "MovePointerRight"},
-    { action = "Press",   mod = ["Super", "Shift"], key = 111, command = "MovePointerUpLittle"},
-    { action = "Press",   mod = ["Super", "Shift"], key = 116, command = "MovePointerDownLittle"},
-    { action = "Press",   mod = ["Super", "Shift"], key = 113, command = "MovePointerLeftLittle"},
-    { action = "Press",   mod = ["Super", "Shift"], key = 114, command = "MovePointerRightLittle"},
+    - { action: Press,   mod: [Super],        key: 111, command: {MovePointerRel: [  0, -32]} }
+    - { action: Press,   mod: [Super],        key: 116, command: {MovePointerRel: [  0,  32]} }
+    - { action: Press,   mod: [Super],        key: 113, command: {MovePointerRel: [-32,   0]} }
+    - { action: Press,   mod: [Super],        key: 114, command: {MovePointerRel: [ 32,   0]} }
+    - { action: Press,   mod: [Super, Shift], key: 111, command: {MovePointerRel: [  0,  -1]} }
+    - { action: Press,   mod: [Super, Shift], key: 116, command: {MovePointerRel: [  0,   1]} }
+    - { action: Press,   mod: [Super, Shift], key: 113, command: {MovePointerRel: [ -1,   0]} }
+    - { action: Press,   mod: [Super, Shift], key: 114, command: {MovePointerRel: [  1,   0]} }
 
-    { action = "Press",   mod = ["Super"],          key = 36,  command = "MouseClickLeft"},
-]
-
-[border]
-width = 1
-color_focused = "#FF8882"
-color_regular = "#505050"
+    - { action: Press,   mod: [Super],        key: 36,  command: MouseClickLeft }
 "###;
 
 mod parse {
@@ -119,7 +117,7 @@ mod parse {
     }
 
     #[derive(Debug, Deserialize)]
-    pub struct ConfigTomlRepr {
+    pub struct ConfigYamlRepr {
         keybind: Vec<KeyBind>,
         launcher: String,
         terminal: String,
@@ -136,20 +134,20 @@ mod parse {
 
     impl std::convert::TryFrom<BorderConfig> for super::BorderConfig {
         type Error = Error;
-        fn try_from(toml_repr: BorderConfig) -> Result<Self> {
+        fn try_from(yaml_repr: BorderConfig) -> Result<Self> {
             Ok(super::BorderConfig {
-                width: toml_repr.width,
-                color_focused: parse_color(&toml_repr.color_focused)?,
-                color_regular: parse_color(&toml_repr.color_regular)?,
+                width: yaml_repr.width,
+                color_focused: parse_color(&yaml_repr.color_focused)?,
+                color_regular: parse_color(&yaml_repr.color_regular)?,
             })
         }
     }
 
-    impl std::convert::TryFrom<ConfigTomlRepr> for Config {
+    impl std::convert::TryFrom<ConfigYamlRepr> for Config {
         type Error = Error;
-        fn try_from(toml_repr: ConfigTomlRepr) -> Result<Self> {
+        fn try_from(yaml_repr: ConfigYamlRepr) -> Result<Self> {
             let mut keybind = HashMap::new();
-            for kb in toml_repr.keybind {
+            for kb in yaml_repr.keybind {
                 let mut modmask: u16 = 0;
                 for m in kb.r#mod {
                     modmask |= Into::<u16>::into(m);
@@ -157,16 +155,16 @@ mod parse {
                 keybind.insert((kb.action, modmask, kb.key), kb.command);
             }
 
-            let launcher = toml_repr.launcher;
-            let terminal = toml_repr.terminal;
+            let launcher = yaml_repr.launcher;
+            let terminal = yaml_repr.terminal;
 
-            let background_color = parse_color(&toml_repr.background_color)?;
+            let background_color = parse_color(&yaml_repr.background_color)?;
 
             Ok(Config {
                 keybind,
                 launcher,
                 terminal,
-                border: toml_repr.border.try_into()?,
+                border: yaml_repr.border.try_into()?,
                 background_color,
             })
         }
@@ -197,16 +195,16 @@ impl Config {
         let mut conf = ::config::Config::new();
 
         // Default
-        conf.merge(File::from_str(DEFAULT_CONFIG, FileFormat::Toml).required(true))
+        conf.merge(File::from_str(DEFAULT_CONFIG, FileFormat::Yaml).required(true))
             .expect("ill-formed DEFAULT_CONFIG");
 
-        // config.toml localted on the current working directory.
-        conf.merge(File::new("config.toml", FileFormat::Toml).required(false))
+        // config.yml localted on the current working directory.
+        conf.merge(File::new("config.yml", FileFormat::Yaml).required(false))
             .map_err(|e| Error::InvalidConfig {
                 reason: e.to_string(),
             })?;
 
-        // config.toml localted on the xdg user config directory.
+        // config.yml localted on the xdg user config directory.
         let mut xdg_config = env::var_os("XDG_CONFIG_HOME")
             .map(PathBuf::from)
             .unwrap_or_else(|| {
@@ -216,11 +214,11 @@ impl Config {
                 p
             });
         xdg_config.push("daily");
-        xdg_config.push("config.toml");
+        xdg_config.push("config.yml");
         conf.merge(
             File::new(
                 xdg_config.to_str().expect("not UTF-8 path"),
-                FileFormat::Toml,
+                FileFormat::Yaml,
             )
             .required(false),
         )
@@ -229,11 +227,11 @@ impl Config {
         })?;
 
         // Generate config
-        let toml_repr: parse::ConfigTomlRepr =
+        let yaml_repr: parse::ConfigYamlRepr =
             conf.try_into().map_err(|e| Error::InvalidConfig {
                 reason: e.to_string(),
             })?;
-        toml_repr.try_into()
+        yaml_repr.try_into()
     }
 
     pub fn keybind_match(&self, on: KeybindAction, modifier: u16, keycode: u8) -> Option<Command> {
@@ -253,10 +251,10 @@ impl Default for Config {
 
         use ::config::{File, FileFormat};
         let mut conf = ::config::Config::new();
-        conf.merge(File::from_str(DEFAULT_CONFIG, FileFormat::Toml).required(true))
+        conf.merge(File::from_str(DEFAULT_CONFIG, FileFormat::Yaml).required(true))
             .expect("ill-formed DEFAULT_CONFIG");
 
-        let toml_repr: parse::ConfigTomlRepr = conf.try_into().unwrap();
-        toml_repr.try_into().expect("ill-formed DEFAULT_CONFIG")
+        let yaml_repr: parse::ConfigYamlRepr = conf.try_into().unwrap();
+        yaml_repr.try_into().expect("ill-formed DEFAULT_CONFIG")
     }
 }

@@ -1,0 +1,43 @@
+launcher: /usr/bin/dmenu_run
+terminal: /usr/bin/xterm
+background_color: '#148231'
+border:
+    width: 1
+    color_focused: '#FF8882'
+    color_regular: '#505050'
+
+keybind:
+    - { action: Press,   mod: [Super, Shift], key: 24,  command: Quit }
+    - { action: Press,   mod: [Super],        key: 54,  command: Close }
+    - { action: Press,   mod: [Super],        key: 33,  command: OpenLauncher }
+    - { action: Press,   mod: [Super],        key: 28,  command: OpenTerminal }
+    - { action: Press,   mod: [Super],        key: 23,  command: FocusNext }
+    - { action: Press,   mod: [Super, Shift], key: 23,  command: FocusPrev }
+    - { action: Press,   mod: [Super],        key: 44,  command: FocusNextMonitor }
+    - { action: Press,   mod: [Super],        key: 45,  command: FocusPrevMonitor }
+
+    - { action: Press,   mod: [],             key: 133, command: ShowBorder }
+    - { action: Release, mod: [Super],        key: 133, command: HideBorder }
+
+    - { action: Press,   mod: [Super],        key: 10,  command: {Screen: 0} }
+    - { action: Press,   mod: [Super],        key: 11,  command: {Screen: 1} }
+    - { action: Press,   mod: [Super],        key: 12,  command: {Screen: 2} }
+    - { action: Press,   mod: [Super],        key: 13,  command: {Screen: 3} }
+    - { action: Press,   mod: [Super],        key: 14,  command: {Screen: 4} }
+
+    - { action: Press,   mod: [Super, Shift], key: 10,  command: {MoveToScreen: 0} }
+    - { action: Press,   mod: [Super, Shift], key: 11,  command: {MoveToScreen: 1} }
+    - { action: Press,   mod: [Super, Shift], key: 12,  command: {MoveToScreen: 2} }
+    - { action: Press,   mod: [Super, Shift], key: 13,  command: {MoveToScreen: 3} }
+    - { action: Press,   mod: [Super, Shift], key: 14,  command: {MoveToScreen: 4} }
+
+    - { action: Press,   mod: [Super],        key: 111, command: {MovePointerRel: [  0, -32]} }
+    - { action: Press,   mod: [Super],        key: 116, command: {MovePointerRel: [  0,  32]} }
+    - { action: Press,   mod: [Super],        key: 113, command: {MovePointerRel: [-32,   0]} }
+    - { action: Press,   mod: [Super],        key: 114, command: {MovePointerRel: [ 32,   0]} }
+    - { action: Press,   mod: [Super, Shift], key: 111, command: {MovePointerRel: [  0,  -1]} }
+    - { action: Press,   mod: [Super, Shift], key: 116, command: {MovePointerRel: [  0,   1]} }
+    - { action: Press,   mod: [Super, Shift], key: 113, command: {MovePointerRel: [ -1,   0]} }
+    - { action: Press,   mod: [Super, Shift], key: 114, command: {MovePointerRel: [  1,   0]} }
+
+    - { action: Press,   mod: [Super],        key: 36,  command: MouseClickLeft }
