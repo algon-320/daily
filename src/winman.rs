@@ -293,7 +293,7 @@ impl WinMan {
         Ok(())
     }
 
-    fn launch_app(&self, cmd: &str) -> Result<()> {
+    fn spawn_process(&self, cmd: &str) -> Result<()> {
         let _ = std::process::Command::new("sh").arg("-c").arg(cmd).spawn();
         Ok(())
     }
@@ -364,8 +364,7 @@ impl WinMan {
                 self.focus_changed()?;
             }
 
-            Command::OpenLauncher => self.launch_app(&self.ctx.config.launcher)?,
-            Command::OpenTerminal => self.launch_app(&self.ctx.config.terminal)?,
+            Command::Spawn(cmd) => self.spawn_process(&cmd)?,
 
             Command::Screen(id) => self.switch_screen(id)?,
             Command::MoveToScreen(id) => self.move_window_to_screen(id)?,

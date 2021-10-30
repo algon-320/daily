@@ -12,7 +12,7 @@ pub enum KeybindAction {
     Release,
 }
 
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, serde::Deserialize)]
 pub enum Command {
     Quit,
     ShowBorder,
@@ -22,8 +22,7 @@ pub enum Command {
     FocusPrev,
     FocusNextMonitor,
     FocusPrevMonitor,
-    OpenLauncher,
-    OpenTerminal,
+    Spawn(String),
     Screen(usize),
     MoveToScreen(usize),
     MovePointerRel(i16, i16), // (dx, dy)

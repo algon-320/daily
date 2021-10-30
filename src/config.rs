@@ -27,8 +27,6 @@ use std::convert::TryInto;
 //      Right = 114,
 
 const DEFAULT_CONFIG: &str = r###"
-launcher: /usr/bin/dmenu_run
-terminal: /usr/bin/xterm
 background_color: '#148231'
 border:
     width: 1
@@ -36,10 +34,11 @@ border:
     color_regular: '#505050'
 
 keybind:
+    - { action: Press,   mod: [Super],        key: 33,  command: {Spawn: /usr/bin/dmenu_run} }
+    - { action: Press,   mod: [Super],        key: 28,  command: {Spawn: /usr/bin/xterm} }
+
     - { action: Press,   mod: [Super, Shift], key: 24,  command: Quit }
     - { action: Press,   mod: [Super],        key: 54,  command: Close }
-    - { action: Press,   mod: [Super],        key: 33,  command: OpenLauncher }
-    - { action: Press,   mod: [Super],        key: 28,  command: OpenTerminal }
     - { action: Press,   mod: [Super],        key: 23,  command: FocusNext }
     - { action: Press,   mod: [Super, Shift], key: 23,  command: FocusPrev }
     - { action: Press,   mod: [Super],        key: 44,  command: FocusNextMonitor }
@@ -119,8 +118,6 @@ mod parse {
     #[derive(Debug, Deserialize)]
     pub struct ConfigYamlRepr {
         keybind: Vec<KeyBind>,
-        launcher: String,
-        terminal: String,
         border: BorderConfig,
         background_color: String,
     }
@@ -155,15 +152,10 @@ mod parse {
                 keybind.insert((kb.action, modmask, kb.key), kb.command);
             }
 
-            let launcher = yaml_repr.launcher;
-            let terminal = yaml_repr.terminal;
-
             let background_color = parse_color(&yaml_repr.background_color)?;
 
             Ok(Config {
                 keybind,
-                launcher,
-                terminal,
                 border: yaml_repr.border.try_into()?,
                 background_color,
             })
@@ -181,8 +173,6 @@ pub struct BorderConfig {
 #[derive(Debug)]
 pub struct Config {
     pub keybind: HashMap<(KeybindAction, u16, u8), Command>,
-    pub launcher: String,
-    pub terminal: String,
     pub border: BorderConfig,
     pub background_color: u32,
 }
