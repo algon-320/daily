@@ -4,6 +4,7 @@ mod error;
 mod event;
 mod layout;
 mod screen;
+mod window;
 mod winman;
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, serde::Deserialize)]
@@ -39,7 +40,7 @@ where
     use event::EventHandler;
     use x11rb::connection::Connection;
 
-    let ctx = context::Context::new(display_name)?;
+    let ctx = context::init(display_name)?;
     let mut wm = winman::WinMan::new(ctx.clone())?;
     ctx.conn.flush()?;
 

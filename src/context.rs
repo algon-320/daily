@@ -5,18 +5,32 @@ use crate::config::Config;
 use crate::error::{Error, Result};
 
 use x11rb::connection::Connection;
-use x11rb::protocol::xproto::{ConnectionExt as _, InputFocus, Window as Wid};
+use x11rb::protocol::xproto::{
+    ConnectionExt as _, CreateGCAux, Gcontext, InputFocus, Window as Wid,
+};
 use x11rb::rust_connection::RustConnection;
 
-#[derive(Debug, Clone)]
-pub struct Context {
-    pub conn: Rc<RustConnection>,
-    pub config: Rc<Config>,
-    pub root: Wid,
+pub type Context = Rc<ContextInner>;
+
+pub fn init<S>(display_name: S) -> Result<Context>
+where
+    S: Into<Option<&'static str>>,
+{
+    let inner = ContextInner::new(display_name)?;
+    Ok(Rc::new(inner))
 }
 
-impl Context {
-    pub fn new<S>(display_name: S) -> Result<Self>
+#[derive(Debug)]
+pub struct ContextInner {
+    pub conn: RustConnection,
+    pub config: Config,
+    pub root: Wid,
+    pub color_focused: Gcontext,
+    pub color_regular: Gcontext,
+}
+
+impl ContextInner {
+    fn new<S>(display_name: S) -> Result<Self>
     where
         S: Into<Option<&'static str>>,
     {
@@ -32,10 +46,22 @@ impl Context {
         let root = screen.root;
         debug!("root = {}", root);
 
+        let color_focused = conn.generate_id()?;
+        let aux = CreateGCAux::new().foreground(config.border.color_focused);
+        conn.create_gc(color_focused, root, &aux)?;
+        debug!("color_focused gc = {}", color_focused);
+
+        let color_regular = conn.generate_id()?;
+        let aux = CreateGCAux::new().foreground(config.border.color_regular);
+        conn.create_gc(color_regular, root, &aux)?;
+        debug!("color_regular gc = {}", color_regular);
+
         Ok(Self {
-            conn: Rc::new(conn),
-            config: Rc::new(config),
+            conn,
+            config,
             root,
+            color_focused,
+            color_regular,
         })
     }
 
@@ -53,5 +79,16 @@ impl Context {
 
         let focus = self.conn.get_input_focus()?.reply()?.focus;
         Ok(if is_window(focus) { Some(focus) } else { None })
+    }
+}
+
+impl Drop for ContextInner {
+    fn drop(&mut self) {
+        if let Ok(void) = self.conn.free_gc(self.color_focused) {
+            void.ignore_error();
+        }
+        if let Ok(void) = self.conn.free_gc(self.color_regular) {
+            void.ignore_error();
+        }
     }
 }
