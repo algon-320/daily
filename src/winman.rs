@@ -110,7 +110,7 @@ impl WinMan {
                 WindowState::Unmapped
             };
 
-            let win = Window::new_framed(self.ctx.clone(), wid, state)?;
+            let win = Window::new(self.ctx.clone(), wid, state)?;
             first.add_window(win)?;
         }
 
@@ -357,6 +357,11 @@ impl WinMan {
                 self.focus_changed()?;
             }
 
+            Command::NextLayout => {
+                let screen = self.focused_screen_mut()?;
+                screen.next_layout()?;
+            }
+
             Command::Spawn(cmd) => self.spawn_process(&cmd)?,
 
             Command::Screen(id) => self.switch_screen(id)?,
@@ -403,6 +408,7 @@ impl EventHandlerMethods for WinMan {
             .allow_events(Allow::REPLAY_POINTER, x11rb::CURRENT_TIME)?
             .check()?;
 
+        // TODO: background
         let win = self.window_mut(e.child);
         if e.child != x11rb::NONE && win.is_some() {
             win.unwrap().focus()?;
@@ -419,7 +425,7 @@ impl EventHandlerMethods for WinMan {
                 return Ok(HandleResult::Ignored);
             }
 
-            let win = Window::new_framed(self.ctx.clone(), notif.window, WindowState::Created)?;
+            let win = Window::new(self.ctx.clone(), notif.window, WindowState::Created)?;
 
             let screen = self.focused_screen_mut()?;
             screen.add_window(win)?;

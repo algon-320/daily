@@ -32,6 +32,7 @@ By default, the WM uses following keybindings:
 |`Super` + `J`  |Focus the next monitor|
 |`Super` + `K`  |Focus the previous monitor|
 |`Super` + `C`  |Close the focused window|
+|`Super` + `Space`|Switch layout to the next|
 |`Super` + `1` (num) |Switch (virtual) screen|
 |`Super` + `Shift` + `1` (num) |Move the focused window to the specified (virtual) screen|
 |`Super` + `Shift` + `Q`  |Quit|
@@ -42,6 +43,8 @@ By default, the WM uses following keybindings:
 ## Layout Strategies
 
 - Horizontally tiled
+- Vertically tiled
+- Full Screen
 
 ## Installation
 

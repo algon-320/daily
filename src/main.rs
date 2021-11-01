@@ -23,6 +23,7 @@ pub enum Command {
     FocusPrev,
     FocusNextMonitor,
     FocusPrevMonitor,
+    NextLayout,
     Spawn(String),
     Screen(usize),
     MoveToScreen(usize),

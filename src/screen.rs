@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use crate::context::Context;
 use crate::error::Result;
 use crate::event::{EventHandlerMethods, HandleResult};
-use crate::layout::{HorizontalLayout, Layout};
+use crate::layout::{self, Layout};
 use crate::window::{Window, WindowState};
 use crate::winman::Monitor;
 
@@ -18,16 +18,17 @@ pub struct Screen {
     monitor: Option<Monitor>,
     wins: BTreeMap<Wid, Window>,
     background: Wid, // background window
-    layout: Box<dyn Layout>,
+    layouts: Vec<Box<dyn Layout>>,
+    current_layout: usize,
     border_visible: bool,
 }
 
 impl std::fmt::Debug for Screen {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if f.alternate() {
-            write!(f, "Screen {{ id: {}, monitor: {:#?}, wins: {:#?}, background: {}, layout: {}, border_visible: {} }}", self.id, self.monitor, self.wins, self.background, self.layout.name(), self.border_visible)
+            write!(f, "Screen {{ id: {}, monitor: {:#?}, wins: {:#?}, background: {}, layout: {}, border_visible: {} }}", self.id, self.monitor, self.wins, self.background, self.layouts[self.current_layout].name(), self.border_visible)
         } else {
-            write!(f, "Screen {{ id: {}, monitor: {:?}, wins: {:?}, background: {}, layout: {}, border_visible: {} }}", self.id, self.monitor, self.wins, self.background, self.layout.name(), self.border_visible)
+            write!(f, "Screen {{ id: {}, monitor: {:?}, wins: {:?}, background: {}, layout: {}, border_visible: {} }}", self.id, self.monitor, self.wins, self.background, self.layouts[self.current_layout].name(), self.border_visible)
         }
     }
 }
@@ -56,7 +57,25 @@ impl Screen {
             wid
         };
 
-        let layout = HorizontalLayout::new(ctx.clone());
+        let mut layouts: Vec<Box<dyn Layout>> = Vec::new();
+
+        // let horizontal = layout::Horizontal::new(ctx.clone());
+        // layouts.push(Box::new(horizontal));
+
+        let horizontal = layout::HorizontalWithBorder::new(ctx.clone());
+        layouts.push(Box::new(horizontal));
+
+        // let vertical = layout::Vertical::new(ctx.clone());
+        // layouts.push(Box::new(vertical));
+
+        let vertical = layout::VerticalWithBorder::new(ctx.clone());
+        layouts.push(Box::new(vertical));
+
+        let full = layout::FullScreen::new(ctx.clone());
+        layouts.push(Box::new(full));
+
+        assert!(!layouts.is_empty());
+        let current_layout = 0;
 
         Ok(Self {
             ctx,
@@ -64,7 +83,8 @@ impl Screen {
             monitor: None,
             wins: Default::default(),
             background,
-            layout: Box::new(layout),
+            layouts,
+            current_layout,
             border_visible: false,
         })
     }
@@ -170,6 +190,11 @@ impl Screen {
         Ok(win)
     }
 
+    pub fn next_layout(&mut self) -> Result<()> {
+        self.current_layout = (self.current_layout + 1) % self.layouts.len();
+        self.refresh_layout()
+    }
+
     pub fn refresh_layout(&mut self) -> Result<()> {
         if self.monitor.is_none() {
             return Ok(());
@@ -177,28 +202,26 @@ impl Screen {
 
         debug!("screen.refresh_layout: id={}", self.id);
 
-        let focused = self
-            .ctx
-            .get_focused_window()?
-            .unwrap_or_else(|| InputFocus::NONE.into());
-
-        let mut wids: Vec<Wid> = self
-            .wins
-            .iter()
-            .filter_map(|(&wid, win)| if win.is_mapped() { Some(wid) } else { None })
-            .collect();
-        wids.sort_unstable();
+        let wins: Vec<&Window> = self.wins.values().filter(|win| win.is_mapped()).collect();
+        // wids.sort_unstable(); // FIXME
 
         let mon = self.monitor.as_ref().unwrap();
-        self.layout.layout(&mon.info, &wids, self.border_visible)?;
+        let layout = &mut self.layouts[self.current_layout];
+        layout.layout(&mon.info, &wins, self.border_visible)?;
 
         // update highlight
-        for win in self.wins.values_mut() {
-            if win.contains(focused) {
-                debug!("highlight: win={:?}", win);
-                win.highlight()?;
-            } else {
-                win.clear_highlight()?;
+        {
+            let focused = self
+                .ctx
+                .get_focused_window()?
+                .unwrap_or_else(|| InputFocus::NONE.into());
+
+            for win in self.wins.values_mut() {
+                if win.contains(focused) {
+                    win.highlight()?;
+                } else {
+                    win.clear_highlight()?;
+                }
             }
         }
 

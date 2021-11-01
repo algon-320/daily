@@ -48,6 +48,7 @@ pub struct Window {
 }
 
 impl Window {
+    #[allow(unused)]
     pub fn new(ctx: Context, inner: Wid, state: WindowState) -> Result<Self> {
         if state == WindowState::Mapped {
             ctx.conn.map_window(inner)?;
@@ -61,6 +62,7 @@ impl Window {
         })
     }
 
+    #[allow(unused)]
     pub fn new_framed(ctx: Context, inner: Wid, state: WindowState) -> Result<Self> {
         let frame = frame_window(&ctx, inner)?;
 

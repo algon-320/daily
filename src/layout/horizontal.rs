@@ -1,34 +1,34 @@
 #![allow(dead_code)]
 
+use x11rb::protocol::{randr::MonitorInfo, xproto::*};
+
+use super::Layout;
 use crate::context::Context;
 use crate::error::Result;
-
-use x11rb::protocol::{randr::MonitorInfo, xproto::*};
-use Window as Wid;
-
-pub trait Layout {
-    fn layout(&mut self, mon: &MonitorInfo, windows: &[Wid], border_visible: bool) -> Result<()>;
-
-    fn name(&self) -> &'static str;
-}
+use crate::window::Window;
 
 #[derive(Debug)]
-pub struct HorizontalLayout {
+pub struct Horizontal {
     ctx: Context,
 }
 
-impl HorizontalLayout {
+impl Horizontal {
     pub fn new(ctx: Context) -> Self {
         Self { ctx }
     }
 }
 
-impl Layout for HorizontalLayout {
+impl Layout for Horizontal {
     fn name(&self) -> &'static str {
         "horizontal"
     }
 
-    fn layout(&mut self, mon: &MonitorInfo, windows: &[Wid], border_visible: bool) -> Result<()> {
+    fn layout(
+        &mut self,
+        mon: &MonitorInfo,
+        windows: &[&Window],
+        border_visible: bool,
+    ) -> Result<()> {
         if windows.is_empty() {
             return Ok(());
         }
@@ -40,7 +40,9 @@ impl Layout for HorizontalLayout {
         let offset_y = mon.y as i32;
         let mut x = 0;
 
-        for &wid in windows.iter() {
+        for win in windows.iter() {
+            let wid = win.id();
+
             let border_conf = self.ctx.config.border;
             let border_width = if border_visible { border_conf.width } else { 0 };
 
@@ -51,6 +53,7 @@ impl Layout for HorizontalLayout {
                 .width(w - border_width * 2)
                 .height(h - border_width * 2);
             self.ctx.conn.configure_window(wid, &conf)?;
+
             x += w as i32;
         }
 
@@ -59,24 +62,24 @@ impl Layout for HorizontalLayout {
 }
 
 #[derive(Debug)]
-pub struct HorizontalLayoutWithBorder {
-    ctx: Context,
-    base: HorizontalLayout,
+pub struct HorizontalWithBorder {
+    base: Horizontal,
 }
 
-impl HorizontalLayoutWithBorder {
+impl HorizontalWithBorder {
     pub fn new(ctx: Context) -> Self {
-        let base = HorizontalLayout::new(ctx.clone());
-        Self { ctx, base }
+        Self {
+            base: Horizontal::new(ctx),
+        }
     }
 }
 
-impl Layout for HorizontalLayoutWithBorder {
+impl Layout for HorizontalWithBorder {
     fn name(&self) -> &'static str {
         "horizontal-with-border"
     }
 
-    fn layout(&mut self, mon: &MonitorInfo, windows: &[Wid], _: bool) -> Result<()> {
+    fn layout(&mut self, mon: &MonitorInfo, windows: &[&Window], _: bool) -> Result<()> {
         self.base.layout(mon, windows, true)
     }
 }
