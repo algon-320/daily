@@ -103,6 +103,9 @@ impl WinMan {
         // Put all pre-existing windows on the first screen.
         for &wid in preexist.iter() {
             let attr = self.ctx.conn.get_window_attributes(wid)?.reply()?;
+            if attr.class == WindowClass::INPUT_ONLY {
+                continue;
+            }
 
             let state = if attr.map_state == MapState::VIEWABLE {
                 WindowState::Mapped
@@ -421,6 +424,11 @@ impl EventHandlerMethods for WinMan {
 
     fn on_create_notify(&mut self, notif: CreateNotifyEvent) -> Result<HandleResult> {
         if !notif.override_redirect {
+            let attr = self.ctx.conn.get_window_attributes(notif.window)?.reply()?;
+            if attr.class == WindowClass::INPUT_ONLY {
+                return Ok(HandleResult::Consumed);
+            }
+
             if self.container_of_mut(notif.window).is_some() {
                 return Ok(HandleResult::Ignored);
             }
