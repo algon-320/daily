@@ -84,6 +84,8 @@ impl ContextInner {
 
 impl Drop for ContextInner {
     fn drop(&mut self) {
+        debug!("ContextInner drop");
+
         if let Ok(void) = self.conn.free_gc(self.color_focused) {
             void.ignore_error();
         }
