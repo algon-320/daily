@@ -160,8 +160,8 @@ impl Screen {
         Ok(())
     }
 
-    pub fn monitor(&self) -> Option<Monitor> {
-        self.monitor.clone()
+    pub fn monitor(&self) -> Option<&Monitor> {
+        self.monitor.as_ref()
     }
 
     pub fn add_window(&mut self, mut win: Window) -> Result<()> {
@@ -202,8 +202,8 @@ impl Screen {
 
         debug!("screen.refresh_layout: id={}", self.id);
 
-        let wins: Vec<&Window> = self.wins.values().filter(|win| win.is_mapped()).collect();
-        // wids.sort_unstable(); // FIXME
+        let mut wins: Vec<&Window> = self.wins.values().filter(|win| win.is_mapped()).collect();
+        wins.sort_unstable_by_key(|w| w.id());
 
         let mon = self.monitor.as_ref().unwrap();
         let layout = &mut self.layouts[self.current_layout];
@@ -217,6 +217,10 @@ impl Screen {
                 .unwrap_or_else(|| InputFocus::NONE.into());
 
             for win in self.wins.values_mut() {
+                if !win.is_mapped() {
+                    continue;
+                }
+
                 if win.contains(focused) {
                     win.highlight()?;
                 } else {

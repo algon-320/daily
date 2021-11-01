@@ -238,12 +238,12 @@ impl Drop for Window {
     fn drop(&mut self) {
         debug!("Window drop");
 
-        let root = self.ctx.root;
-        if let Ok(void) = self.ctx.conn.reparent_window(self.inner, root, 0, 0) {
-            void.ignore_error();
-        }
-
         if let Some(frame) = self.frame {
+            let root = self.ctx.root;
+            if let Ok(void) = self.ctx.conn.reparent_window(self.inner, root, 0, 0) {
+                void.ignore_error();
+            }
+
             if let Ok(void) = self.ctx.conn.destroy_window(frame) {
                 void.ignore_error();
             }

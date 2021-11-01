@@ -13,9 +13,32 @@ use x11rb::protocol::{
     xtest::ConnectionExt as _,
 };
 
+fn get_mut_pair<T>(slice: &mut [T], a: usize, b: usize) -> (&mut T, &mut T) {
+    assert!(a != b && a < slice.len() && b < slice.len());
+
+    use std::cmp::{max, min};
+    let (a, b, swapped) = (min(a, b), max(a, b), a > b);
+
+    // <--------xyz-------->
+    // <--x--><-----yz----->
+    //        <--y--><--z-->
+    // .......a......b......
+    let xyz = slice;
+    let (_x, yz) = xyz.split_at_mut(a);
+    let (y, z) = yz.split_at_mut(b - a);
+    let a = &mut y[0];
+    let b = &mut z[0];
+
+    if swapped {
+        (b, a)
+    } else {
+        (a, b)
+    }
+}
+
 const MAX_SCREENS: usize = 10;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Monitor {
     pub id: usize,
     pub info: randr::MonitorInfo,
@@ -211,14 +234,7 @@ impl WinMan {
             }
 
             // perfom swap
-            use std::cmp::{max, min};
-            let (a, b) = (min(a, b), max(a, b));
-
-            let (_, scrs) = self.screens.split_at_mut(a);
-            let (screen_a, screen_b) = scrs.split_at_mut(b - a);
-            let screen_a = &mut screen_a[0];
-            let screen_b = &mut screen_b[0];
-
+            let (screen_a, screen_b) = get_mut_pair(&mut self.screens, a, b);
             Screen::swap_monitor(screen_a, screen_b)?;
         }
 
