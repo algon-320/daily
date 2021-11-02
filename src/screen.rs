@@ -1,15 +1,15 @@
 use log::debug;
 use std::collections::BTreeMap;
 
+use x11rb::connection::Connection;
+use x11rb::protocol::xproto::{Window as Wid, *};
+
 use crate::context::Context;
 use crate::error::Result;
-use crate::event::{EventHandlerMethods, HandleResult};
+use crate::event::EventHandlerMethods;
 use crate::layout::{self, Layout};
 use crate::window::{Window, WindowState};
 use crate::winman::Monitor;
-
-use x11rb::connection::Connection;
-use x11rb::protocol::xproto::{Window as Wid, *};
 
 #[derive()]
 pub struct Screen {
@@ -17,7 +17,7 @@ pub struct Screen {
     pub id: usize,
     monitor: Option<Monitor>,
     wins: BTreeMap<Wid, Window>,
-    background: Wid, // background window
+    background: Window, // background window
     layouts: Vec<Box<dyn Layout>>,
     current_layout: usize,
     border_visible: bool,
@@ -26,9 +26,9 @@ pub struct Screen {
 impl std::fmt::Debug for Screen {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if f.alternate() {
-            write!(f, "Screen {{ id: {}, monitor: {:#?}, wins: {:#?}, background: {}, layout: {}, border_visible: {} }}", self.id, self.monitor, self.wins, self.background, self.layouts[self.current_layout].name(), self.border_visible)
+            write!(f, "Screen {{ id: {}, monitor: {:#?}, wins: {:#?}, background: {}, layout: {}, border_visible: {} }}", self.id, self.monitor, self.wins, self.background.id(), self.layouts[self.current_layout].name(), self.border_visible)
         } else {
-            write!(f, "Screen {{ id: {}, monitor: {:?}, wins: {:?}, background: {}, layout: {}, border_visible: {} }}", self.id, self.monitor, self.wins, self.background, self.layouts[self.current_layout].name(), self.border_visible)
+            write!(f, "Screen {{ id: {}, monitor: {:?}, wins: {:?}, background: {}, layout: {}, border_visible: {} }}", self.id, self.monitor, self.wins, self.background.id(), self.layouts[self.current_layout].name(), self.border_visible)
         }
     }
 }
@@ -54,7 +54,7 @@ impl Screen {
                 x11rb::COPY_FROM_PARENT,
                 &aux,
             )?;
-            wid
+            Window::new(ctx.clone(), wid, WindowState::Unmapped)?
         };
 
         let mut layouts: Vec<Box<dyn Layout>> = Vec::new();
@@ -92,13 +92,17 @@ impl Screen {
     pub fn attach(&mut self, monitor: Monitor) -> Result<()> {
         debug!(
             "screen.attach: id={}, background={}, monitor={:?}, wins={:?}",
-            self.id, self.background, monitor, self.wins
+            self.id,
+            self.background.id(),
+            monitor,
+            self.wins
         );
 
         self.monitor = Some(monitor);
         self.update_background()?;
 
-        self.ctx.conn.map_window(self.background)?;
+        self.background.map()?;
+
         for win in self.wins.values_mut() {
             let state = win.state();
             if state == WindowState::Mapped || state == WindowState::Hidden {
@@ -116,10 +120,14 @@ impl Screen {
 
         debug!(
             "screen.detach: id={}, background={}, monitor={:?}, wins={:?}",
-            self.id, self.background, self.monitor, self.wins
+            self.id,
+            self.background.id(),
+            self.monitor,
+            self.wins
         );
 
-        self.ctx.conn.unmap_window(self.background)?;
+        self.background.unmap()?;
+
         for w in self.wins.values_mut() {
             if w.is_mapped() {
                 w.hide()?;
@@ -156,7 +164,8 @@ impl Screen {
             .width(mon.info.width as u32)
             .height(mon.info.height as u32)
             .stack_mode(StackMode::BELOW);
-        self.ctx.conn.configure_window(self.background, &aux)?;
+        let id = self.background.id();
+        self.ctx.conn.configure_window(id, &aux)?;
         Ok(())
     }
 
@@ -181,12 +190,18 @@ impl Screen {
     }
 
     pub fn forget_window(&mut self, wid: Wid) -> Result<Window> {
-        let wid = self.window_mut(wid).expect("unknown window").id();
-
         debug!("screen.forget_window: id={}, wid={}", self.id, wid);
-        let win = self.wins.remove(&wid).expect("unknown window");
 
+        if let Some(focused) = self.ctx.get_focused_window()? {
+            if self.window_mut(focused).is_some() {
+                self.focus_next()?;
+            }
+        }
+
+        let wid = self.window_mut(wid).expect("unknown window").id();
+        let win = self.wins.remove(&wid).expect("unknown window");
         self.refresh_layout()?;
+
         Ok(win)
     }
 
@@ -232,20 +247,22 @@ impl Screen {
         Ok(())
     }
 
-    pub fn background(&self) -> Wid {
-        self.background
+    pub fn background(&self) -> &Window {
+        &self.background
     }
 
     pub fn contains(&self, wid: Wid) -> bool {
-        if wid == self.background {
-            true
-        } else {
-            self.wins.contains_key(&wid) || self.wins.values().any(|win| win.contains(wid))
-        }
+        self.background.contains(wid)
+            || self.wins.contains_key(&wid)
+            || self.wins.values().any(|win| win.contains(wid))
     }
 
     pub fn window_mut(&mut self, wid: Wid) -> Option<&mut Window> {
-        self.wins.values_mut().find(|win| win.contains(wid))
+        if self.background.contains(wid) {
+            Some(&mut self.background)
+        } else {
+            self.wins.values_mut().find(|win| win.contains(wid))
+        }
     }
 
     pub fn focus_any(&mut self) -> Result<()> {
@@ -258,7 +275,8 @@ impl Screen {
             Some(first) => first.focus(),
             None => {
                 debug!("screen {}: focus background", self.id);
-                self.ctx.focus_window(self.background)
+                self.background.focus()?;
+                Ok(())
             }
         }
     }
@@ -269,7 +287,7 @@ impl Screen {
             .get_focused_window()?
             .unwrap_or_else(|| InputFocus::NONE.into());
 
-        if !self.contains(old) || old == self.background {
+        if !self.contains(old) || self.background.contains(old) {
             return self.focus_any();
         }
 
@@ -302,118 +320,5 @@ impl Screen {
 }
 
 impl EventHandlerMethods for Screen {
-    fn on_map_request(&mut self, req: MapRequestEvent) -> Result<HandleResult> {
-        let wid = req.window;
-
-        if !self.contains(wid) {
-            return Ok(HandleResult::Ignored);
-        }
-
-        if wid == self.background {
-            unreachable!(); // because of overide_redirect
-        }
-
-        let win = self.window_mut(wid).unwrap();
-        win.on_map_request(req)
-    }
-
-    fn on_map_notify(&mut self, notif: MapNotifyEvent) -> Result<HandleResult> {
-        let wid = notif.window;
-
-        if !self.contains(wid) {
-            return Ok(HandleResult::Ignored);
-        }
-
-        if wid == self.background {
-            return Ok(HandleResult::Consumed);
-        }
-
-        let win = self.window_mut(wid).unwrap();
-        win.on_map_notify(notif)?;
-
-        self.refresh_layout()?;
-        Ok(HandleResult::Consumed)
-    }
-
-    fn on_unmap_notify(&mut self, notif: UnmapNotifyEvent) -> Result<HandleResult> {
-        let wid = notif.window;
-
-        if !self.contains(wid) {
-            return Ok(HandleResult::Ignored);
-        }
-
-        if wid == self.background {
-            return Ok(HandleResult::Consumed);
-        }
-
-        let win = self.window_mut(wid).unwrap();
-        win.on_unmap_notify(notif)?;
-
-        self.refresh_layout()?;
-        Ok(HandleResult::Consumed)
-    }
-
-    fn on_destroy_notify(&mut self, notif: DestroyNotifyEvent) -> Result<HandleResult> {
-        let wid = notif.window;
-
-        if !self.contains(wid) {
-            return Ok(HandleResult::Ignored);
-        }
-
-        if wid == self.background {
-            return Ok(HandleResult::Consumed);
-        }
-
-        if Some(wid) == self.ctx.get_focused_window()? {
-            self.focus_next()?;
-        }
-
-        let wid = self.window_mut(wid).unwrap().id();
-        let _ = self.forget_window(wid)?;
-        Ok(HandleResult::Consumed)
-    }
-
-    fn on_configure_request(&mut self, req: ConfigureRequestEvent) -> Result<HandleResult> {
-        let wid = req.window;
-
-        if !self.contains(wid) {
-            return Ok(HandleResult::Ignored);
-        }
-
-        if wid == self.background {
-            let aux = ConfigureWindowAux::from_configure_request(&req);
-            self.ctx.conn.configure_window(wid, &aux)?;
-            return Ok(HandleResult::Consumed);
-        }
-
-        let win = self.window_mut(wid).unwrap();
-        let res = win.on_configure_request(req);
-
-        self.refresh_layout()?;
-
-        res
-    }
-
-    fn on_configure_notify(&mut self, notif: ConfigureNotifyEvent) -> Result<HandleResult> {
-        let wid = notif.window;
-
-        if !self.contains(wid) {
-            return Ok(HandleResult::Ignored);
-        }
-
-        if wid == self.background {
-            unreachable!(); // because of override_redirect
-        }
-
-        let win = self.window_mut(wid).unwrap();
-        win.on_configure_notify(notif)
-    }
-
-    fn on_focus_in(&mut self, _focus_in: FocusInEvent) -> Result<HandleResult> {
-        Ok(HandleResult::Consumed)
-    }
-
-    fn on_focus_out(&mut self, _focus_out: FocusInEvent) -> Result<HandleResult> {
-        Ok(HandleResult::Consumed)
-    }
+    // use default impls
 }

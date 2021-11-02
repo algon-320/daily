@@ -1,18 +1,10 @@
 use log::debug;
 
+use x11rb::protocol::xproto::{Window as Wid, *};
+
 use crate::context::Context;
 use crate::error::Result;
 use crate::event::{EventHandlerMethods, HandleResult};
-
-use x11rb::protocol::xproto::{Window as Wid, *};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum WindowState {
-    Created,
-    Mapped,
-    Unmapped,
-    Hidden,
-}
 
 fn frame_window(ctx: &Context, wid: Wid) -> Result<Wid> {
     use x11rb::connection::Connection as _;
@@ -37,6 +29,14 @@ fn frame_window(ctx: &Context, wid: Wid) -> Result<Wid> {
     ctx.conn.reparent_window(wid, frame, 0, 16)?;
 
     Ok(frame)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum WindowState {
+    Created,
+    Mapped,
+    Unmapped,
+    Hidden,
 }
 
 #[derive(Clone)]
@@ -114,7 +114,7 @@ impl Window {
     }
 
     pub fn unmap(&mut self) -> Result<()> {
-        if self.state != WindowState::Unmapped {
+        if self.state == WindowState::Mapped {
             if let Some(frame) = self.frame {
                 self.ctx.conn.unmap_window(frame)?;
             }
@@ -199,10 +199,7 @@ impl EventHandlerMethods for Window {
             return Ok(HandleResult::Ignored);
         }
 
-        if self.state == WindowState::Mapped {
-            self.unmap()?;
-        }
-
+        self.unmap()?;
         Ok(HandleResult::Consumed)
     }
 
@@ -247,6 +244,10 @@ impl Drop for Window {
             if let Ok(void) = self.ctx.conn.destroy_window(frame) {
                 void.ignore_error();
             }
+        }
+
+        if let Ok(void) = self.ctx.conn.destroy_window(self.inner) {
+            void.ignore_error();
         }
     }
 }

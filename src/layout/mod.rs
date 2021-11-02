@@ -6,10 +6,10 @@ pub use full::*;
 pub use horizontal::*;
 pub use vertical::*;
 
+use x11rb::protocol::randr::MonitorInfo;
+
 use crate::error::Result;
 use crate::window::Window;
-
-use x11rb::protocol::randr::MonitorInfo;
 
 pub trait Layout {
     fn layout(

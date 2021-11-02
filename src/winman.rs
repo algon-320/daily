@@ -1,4 +1,10 @@
-use log::{debug, info, warn};
+use log::{debug, error, info, warn};
+
+use x11rb::protocol::{
+    randr::{self, ConnectionExt as _},
+    xproto::{Window as Wid, *},
+    xtest::ConnectionExt as _,
+};
 
 use crate::context::Context;
 use crate::error::{Error, Result};
@@ -6,12 +12,6 @@ use crate::event::{EventHandlerMethods, HandleResult};
 use crate::screen::Screen;
 use crate::window::{Window, WindowState};
 use crate::{Command, KeybindAction};
-
-use x11rb::protocol::{
-    randr::{self, ConnectionExt as _},
-    xproto::{Window as Wid, *},
-    xtest::ConnectionExt as _,
-};
 
 fn get_mut_pair<T>(slice: &mut [T], a: usize, b: usize) -> (&mut T, &mut T) {
     assert!(a != b && a < slice.len() && b < slice.len());
@@ -34,6 +34,43 @@ fn get_mut_pair<T>(slice: &mut [T], a: usize, b: usize) -> (&mut T, &mut T) {
     } else {
         (a, b)
     }
+}
+
+fn spawn_process(cmd: &str) -> Result<()> {
+    let _ = std::process::Command::new("sh").arg("-c").arg(cmd).spawn();
+    Ok(())
+}
+
+fn move_pointer(ctx: &Context, dx: i16, dy: i16) -> Result<()> {
+    ctx.conn
+        .warp_pointer(x11rb::NONE, x11rb::NONE, 0, 0, 0, 0, dx, dy)?;
+    Ok(())
+}
+
+fn simulate_click(ctx: &Context, button: u8, duration_ms: u32) -> Result<()> {
+    // button down
+    ctx.conn.xtest_fake_input(
+        BUTTON_PRESS_EVENT,
+        button,
+        x11rb::CURRENT_TIME,
+        x11rb::NONE,
+        0,
+        0,
+        0,
+    )?;
+
+    // button up
+    ctx.conn.xtest_fake_input(
+        BUTTON_RELEASE_EVENT,
+        button,
+        duration_ms,
+        x11rb::NONE,
+        0,
+        0,
+        0,
+    )?;
+
+    Ok(())
 }
 
 const MAX_SCREENS: usize = 10;
@@ -121,7 +158,7 @@ impl WinMan {
         // Setup monitors
         self.setup_monitor()?;
 
-        let first = self.screens.get_mut(0).expect("no screen");
+        let first = &mut self.screens[0];
 
         // Put all pre-existing windows on the first screen.
         for &wid in preexist.iter() {
@@ -143,7 +180,9 @@ impl WinMan {
         // Focus the first monitor
         first.focus_any()?;
 
-        debug!("screen 0: {:#?}", self.screens[0]);
+        for (id, screen) in self.screens.iter().enumerate() {
+            debug!("[{}]: screen {}: {:#?}", id, screen.id, screen);
+        }
 
         self.refresh_layout()?;
 
@@ -162,31 +201,18 @@ impl WinMan {
             screen.detach()?;
         }
 
-        for id in self.screens.len()..std::cmp::max(self.monitor_num, MAX_SCREENS) {
+        let max_num = std::cmp::max(self.monitor_num, MAX_SCREENS);
+        while self.screens.len() < max_num {
+            let id = self.screens.len();
             let screen = Screen::new(self.ctx.clone(), id)?;
             self.screens.push(screen);
         }
 
         for (id, info) in monitors_reply.monitors.into_iter().enumerate() {
-            let screen = self.screens.get_mut(id).unwrap();
+            let screen = &mut self.screens[id];
             screen.attach(Monitor { id, info })?;
         }
         Ok(())
-    }
-
-    fn refresh_layout(&mut self) -> Result<()> {
-        for screen in self.screens.iter_mut() {
-            screen.refresh_layout()?;
-        }
-        Ok(())
-    }
-
-    fn focused_screen_mut(&mut self) -> Result<&mut Screen> {
-        let mut id = None;
-        if let Some(wid) = self.ctx.get_focused_window()? {
-            id = self.container_of_mut(wid).map(|sc| sc.id);
-        };
-        Ok(self.screens.get_mut(id.unwrap_or(0)).unwrap())
     }
 
     fn find_screen_mut<P>(&mut self, pred: P) -> Option<&mut Screen>
@@ -210,19 +236,39 @@ impl WinMan {
         screen.window_mut(wid)
     }
 
+    fn focused_screen_mut(&mut self) -> Result<&mut Screen> {
+        let mut id = None;
+        if let Some(wid) = self.ctx.get_focused_window()? {
+            id = self.container_of_mut(wid).map(|sc| sc.id);
+        };
+        let id = id.unwrap_or(0);
+        Ok(&mut self.screens[id])
+    }
+
+    fn refresh_layout(&mut self) -> Result<()> {
+        for screen in self.screens.iter_mut() {
+            screen.refresh_layout()?;
+        }
+        Ok(())
+    }
+
     fn focus_changed(&mut self) -> Result<()> {
         self.refresh_layout()?;
         Ok(())
     }
 
     fn switch_screen(&mut self, id: usize) -> Result<()> {
-        debug_assert!(id < MAX_SCREENS);
+        if id >= self.screens.len() {
+            error!("winman.switch_screen: invalid id = {}", id);
+            return Ok(());
+        }
 
         debug!("switch to screen: {}", id);
+
         if self.screens[id].monitor().is_none() {
-            let old = self.focused_screen_mut()?;
+            let old = self.focused_screen_mut()?; // FIXME
             let mon_info = old.detach()?.expect("focus inconsistent");
-            let new = self.screens.get_mut(id).unwrap();
+            let new = &mut self.screens[id];
             new.attach(mon_info)?;
         } else {
             let a = self.focused_screen_mut()?.id;
@@ -238,7 +284,7 @@ impl WinMan {
             Screen::swap_monitor(screen_a, screen_b)?;
         }
 
-        let screen = self.screens.get_mut(id).unwrap();
+        let screen = &mut self.screens[id];
         screen.focus_any()?;
         self.focus_changed()?;
 
@@ -246,64 +292,38 @@ impl WinMan {
     }
 
     fn move_window_to_screen(&mut self, id: usize) -> Result<()> {
-        debug_assert!(id < MAX_SCREENS);
-
-        if let Some(wid) = self.ctx.get_focused_window()? {
-            let screen = self.focused_screen_mut()?;
-
-            if wid == screen.background() {
-                return Ok(());
-            }
-
-            debug!("move_window_to_screen: wid = {}", wid);
-
-            let win = screen.forget_window(wid)?;
-            screen.focus_any()?;
-
-            let screen = self.screens.get_mut(id).unwrap();
-            screen.add_window(win)?;
-
-            self.focus_changed()?;
+        if id >= self.screens.len() {
+            error!("winman.switch_screen: invalid id = {}", id);
+            return Ok(());
         }
 
+        let focus = self.ctx.get_focused_window()?;
+        if let Some(wid) = focus {
+            if let Some(src) = self.container_of_mut(wid) {
+                if src.background().contains(wid) {
+                    return Ok(());
+                }
+
+                debug!("move_window_to_screen: wid = {}", wid);
+
+                let win = src.forget_window(wid)?;
+                src.focus_any()?;
+
+                let dst = &mut self.screens[id];
+                dst.add_window(win)?;
+
+                self.focus_changed()?;
+            }
+        }
         Ok(())
     }
 
-    fn move_pointer(&mut self, dx: i16, dy: i16) -> Result<()> {
-        self.ctx
-            .conn
-            .warp_pointer(x11rb::NONE, x11rb::NONE, 0, 0, 0, 0, dx, dy)?;
-        Ok(())
-    }
-
-    fn simulate_click(&mut self, button: u8, duration_ms: u32) -> Result<()> {
-        // button down
-        self.ctx.conn.xtest_fake_input(
-            BUTTON_PRESS_EVENT,
-            button,
-            x11rb::CURRENT_TIME,
-            x11rb::NONE,
-            0,
-            0,
-            0,
-        )?;
-
-        // button up
-        self.ctx.conn.xtest_fake_input(
-            BUTTON_RELEASE_EVENT,
-            button,
-            duration_ms,
-            x11rb::NONE,
-            0,
-            0,
-            0,
-        )?;
-
-        Ok(())
-    }
-
-    fn spawn_process(&self, cmd: &str) -> Result<()> {
-        let _ = std::process::Command::new("sh").arg("-c").arg(cmd).spawn();
+    fn focus_monitor(&mut self, mon_id: usize) -> Result<()> {
+        let screen = self
+            .find_screen_mut(|screen| screen.monitor().map(|mon| mon.id) == Some(mon_id))
+            .expect("Monitor lost");
+        screen.focus_any()?;
+        self.focus_changed()?;
         Ok(())
     }
 
@@ -325,10 +345,12 @@ impl WinMan {
             }
 
             Command::Close => {
-                if let Some(focused) = self.ctx.get_focused_window()? {
-                    let wid = self.window_mut(focused).map(|w| w.id());
-                    if let Some(wid) = wid {
-                        self.ctx.conn.destroy_window(wid)?;
+                if let Some(wid) = self.ctx.get_focused_window()? {
+                    if let Some(screen) = self.container_of_mut(wid) {
+                        if !screen.background().contains(wid) {
+                            let _ = screen.forget_window(wid);
+                            self.refresh_layout()?;
+                        }
                     }
                 }
             }
@@ -348,15 +370,7 @@ impl WinMan {
                     .expect("focus inconsistent")
                     .id;
                 let next_monitor = (focused_monitor + 1) % self.monitor_num;
-
-                let screen = self
-                    .find_screen_mut(|screen| {
-                        screen.monitor().map(|mon| mon.id) == Some(next_monitor)
-                    })
-                    .unwrap();
-                screen.focus_any()?;
-
-                self.focus_changed()?;
+                self.focus_monitor(next_monitor)?;
             }
             Command::FocusPrevMonitor => {
                 let focused_monitor = self
@@ -364,16 +378,8 @@ impl WinMan {
                     .monitor()
                     .expect("focus inconsistent")
                     .id;
-                let next_monitor = (focused_monitor + self.monitor_num - 1) % self.monitor_num;
-
-                let screen = self
-                    .find_screen_mut(|screen| {
-                        screen.monitor().map(|mon| mon.id) == Some(next_monitor)
-                    })
-                    .unwrap();
-                screen.focus_any()?;
-
-                self.focus_changed()?;
+                let prev_monitor = (focused_monitor + self.monitor_num - 1) % self.monitor_num;
+                self.focus_monitor(prev_monitor)?;
             }
 
             Command::NextLayout => {
@@ -381,12 +387,12 @@ impl WinMan {
                 screen.next_layout()?;
             }
 
-            Command::Spawn(cmd) => self.spawn_process(&cmd)?,
-
             Command::Screen(id) => self.switch_screen(id)?,
             Command::MoveToScreen(id) => self.move_window_to_screen(id)?,
-            Command::MovePointerRel(dx, dy) => self.move_pointer(dx, dy)?,
-            Command::MouseClickLeft => self.simulate_click(1, 10)?, // left, 10ms
+
+            Command::MovePointerRel(dx, dy) => move_pointer(&self.ctx, dx, dy)?,
+            Command::MouseClickLeft => simulate_click(&self.ctx, 1, 10)?, // left, 10ms
+            Command::Spawn(cmd) => spawn_process(&cmd)?,
         }
         Ok(())
     }
@@ -427,7 +433,6 @@ impl EventHandlerMethods for WinMan {
             .allow_events(Allow::REPLAY_POINTER, x11rb::CURRENT_TIME)?
             .check()?;
 
-        // TODO: background
         let win = self.window_mut(e.child);
         if e.child != x11rb::NONE && win.is_some() {
             win.unwrap().focus()?;
@@ -461,18 +466,17 @@ impl EventHandlerMethods for WinMan {
     }
 
     fn on_map_request(&mut self, req: MapRequestEvent) -> Result<HandleResult> {
-        if let Some(screen) = self.container_of_mut(req.window) {
-            screen.on_map_request(req)
-        } else {
-            Ok(HandleResult::Ignored)
+        if let Some(win) = self.window_mut(req.window) {
+            return win.on_map_request(req);
         }
+        Ok(HandleResult::Ignored)
     }
 
     fn on_map_notify(&mut self, notif: MapNotifyEvent) -> Result<HandleResult> {
         if !notif.override_redirect {
             let wid = notif.window;
-            if let Some(screen) = self.container_of_mut(wid) {
-                let res = screen.on_map_notify(notif);
+            if let Some(win) = self.window_mut(wid) {
+                let res = win.on_map_notify(notif);
                 self.focus_changed()?;
                 return res;
             }
@@ -481,15 +485,15 @@ impl EventHandlerMethods for WinMan {
     }
 
     fn on_unmap_notify(&mut self, notif: UnmapNotifyEvent) -> Result<HandleResult> {
-        if let Some(screen) = self.container_of_mut(notif.window) {
-            return screen.on_unmap_notify(notif);
+        if let Some(win) = self.window_mut(notif.window) {
+            return win.on_unmap_notify(notif);
         }
         Ok(HandleResult::Ignored)
     }
 
     fn on_destroy_notify(&mut self, notif: DestroyNotifyEvent) -> Result<HandleResult> {
-        if let Some(screen) = self.container_of_mut(notif.window) {
-            let res = screen.on_destroy_notify(notif);
+        if let Some(win) = self.window_mut(notif.window) {
+            let res = win.on_destroy_notify(notif);
             self.focus_changed()?;
             return res;
         }
@@ -497,17 +501,16 @@ impl EventHandlerMethods for WinMan {
     }
 
     fn on_configure_request(&mut self, req: ConfigureRequestEvent) -> Result<HandleResult> {
-        if let Some(screen) = self.container_of_mut(req.window) {
-            screen.on_configure_request(req)
-        } else {
-            Ok(HandleResult::Ignored)
+        if let Some(win) = self.window_mut(req.window) {
+            return win.on_configure_request(req);
         }
+        Ok(HandleResult::Ignored)
     }
 
     fn on_configure_notify(&mut self, notif: ConfigureNotifyEvent) -> Result<HandleResult> {
         if !notif.override_redirect {
-            if let Some(screen) = self.container_of_mut(notif.window) {
-                return screen.on_configure_notify(notif);
+            if let Some(win) = self.window_mut(notif.window) {
+                return win.on_configure_notify(notif);
             }
         }
         Ok(HandleResult::Ignored)
@@ -515,8 +518,11 @@ impl EventHandlerMethods for WinMan {
 
     fn on_focus_in(&mut self, focus_in: FocusInEvent) -> Result<HandleResult> {
         if focus_in.event == self.ctx.root {
-            if focus_in.detail == NotifyDetail::POINTER_ROOT {
-                self.focused_screen_mut()?.focus_any()?;
+            if focus_in.detail == NotifyDetail::POINTER_ROOT
+                || focus_in.detail == NotifyDetail::NONE
+            {
+                let screen = &mut self.screens[0];
+                screen.focus_any()?;
             }
             return Ok(HandleResult::Consumed);
         }
