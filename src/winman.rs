@@ -266,13 +266,22 @@ impl WinMan {
         debug!("switch to screen: {}", id);
 
         if self.screens[id].monitor().is_none() {
-            let old = self.focused_screen_mut()?; // FIXME
+            let old_id = self.focused_screen_mut()?.id;
+
+            // HACK:
+            //   Avoid generation of FocusIn event with detail=PointerRoot/None
+            //   between a detach and the following attach.
+            self.ctx.focus_window(self.ctx.root)?;
+
+            let old = &mut self.screens[old_id];
             let mon_info = old.detach()?.expect("focus inconsistent");
+
             let new = &mut self.screens[id];
             new.attach(mon_info)?;
+            new.focus_any()?;
         } else {
             let a = self.focused_screen_mut()?.id;
-            let b = self.screens.iter().position(|sc| sc.id == id).unwrap();
+            let b = id;
 
             // no swap needed
             if a == b {
@@ -282,12 +291,11 @@ impl WinMan {
             // perfom swap
             let (screen_a, screen_b) = get_mut_pair(&mut self.screens, a, b);
             Screen::swap_monitor(screen_a, screen_b)?;
+
+            screen_b.focus_any()?;
         }
 
-        let screen = &mut self.screens[id];
-        screen.focus_any()?;
         self.focus_changed()?;
-
         Ok(())
     }
 
@@ -521,7 +529,16 @@ impl EventHandlerMethods for WinMan {
             if focus_in.detail == NotifyDetail::POINTER_ROOT
                 || focus_in.detail == NotifyDetail::NONE
             {
-                let screen = &mut self.screens[0];
+                // Focus the first monitor
+                let screen = self
+                    .find_screen_mut(|screen| {
+                        if let Some(mon) = screen.monitor() {
+                            mon.id == 0
+                        } else {
+                            false
+                        }
+                    })
+                    .expect("Monitor lost");
                 screen.focus_any()?;
             }
             return Ok(HandleResult::Consumed);
