@@ -566,20 +566,6 @@ impl EventHandlerMethods for WinMan {
             return Ok(HandleResult::Consumed);
         }
 
-        if let Some(screen) = self.container_of_mut(focus_in.event) {
-            return screen.on_focus_in(focus_in);
-        }
-        Ok(HandleResult::Ignored)
-    }
-
-    fn on_focus_out(&mut self, focus_out: FocusInEvent) -> Result<HandleResult> {
-        if focus_out.event == self.ctx.root {
-            return Ok(HandleResult::Consumed);
-        }
-
-        if let Some(screen) = self.container_of_mut(focus_out.event) {
-            return screen.on_focus_out(focus_out);
-        }
         Ok(HandleResult::Ignored)
     }
 
