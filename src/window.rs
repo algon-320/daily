@@ -119,7 +119,13 @@ impl Window {
     pub fn unmap(&mut self) -> Result<()> {
         if self.state == WindowState::Mapped {
             if let Some(frame) = self.frame {
-                self.ctx.conn.unmap_window(frame)?;
+                if let Ok(attr) = self.ctx.conn.get_window_attributes(frame)?.reply() {
+                    if attr.map_state != MapState::UNMAPPED {
+                        self.ctx.conn.unmap_window(frame)?;
+                        // ignore the next unmap event
+                        self.ignore_unmap += 1;
+                    }
+                }
             }
 
             // the reply() will return Err if the self.inner has been already destroyed.
