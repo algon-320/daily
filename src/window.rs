@@ -126,6 +126,8 @@ impl Window {
             if let Ok(attr) = self.ctx.conn.get_window_attributes(self.inner)?.reply() {
                 if attr.map_state != MapState::UNMAPPED {
                     self.ctx.conn.unmap_window(self.inner)?;
+
+                    // ignore the next unmap event
                     self.ignore_unmap += 1;
                 }
             }
@@ -200,8 +202,6 @@ impl EventHandlerMethods for Window {
         if !self.contains(notif.window) {
             return Ok(HandleResult::Ignored);
         }
-
-        // self.map()?;
         Ok(HandleResult::Consumed)
     }
 
@@ -210,12 +210,17 @@ impl EventHandlerMethods for Window {
             return Ok(HandleResult::Ignored);
         }
 
+        // Ignore the event if it is caused by us.
         if self.ignore_unmap > 0 {
             self.ignore_unmap -= 1;
-            return Ok(HandleResult::Ignored);
+            return Ok(HandleResult::Consumed);
         }
 
+        // For unmap events caused by another client, we have to do the following:
+        // - update the state
+        // - unmap the frame window if it exists
         self.unmap()?;
+
         Ok(HandleResult::Consumed)
     }
 
