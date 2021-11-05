@@ -137,27 +137,9 @@ impl Screen {
         Ok(self.monitor.take())
     }
 
-    pub fn swap_monitor(screen1: &mut Self, screen2: &mut Self) -> Result<()> {
-        assert!(screen1.monitor.is_some() && screen2.monitor.is_some());
-
-        debug!(
-            "screen.swap_monitor: id1={}, id2={}, mon1={:?}, mon2={:?}",
-            screen1.id,
-            screen2.id,
-            screen1.monitor.as_ref().unwrap(),
-            screen2.monitor.as_ref().unwrap(),
-        );
-
-        std::mem::swap(&mut screen1.monitor, &mut screen2.monitor);
-
-        screen1.update_background()?;
-        screen2.update_background()?;
-
-        Ok(())
-    }
-
     pub fn update_background(&mut self) -> Result<()> {
         let mon = self.monitor.as_ref().unwrap();
+
         let aux = ConfigureWindowAux::new()
             .x(mon.info.x as i32)
             .y(mon.info.y as i32)
@@ -192,16 +174,21 @@ impl Screen {
     pub fn forget_window(&mut self, wid: Wid) -> Result<Window> {
         debug!("screen.forget_window: id={}, wid={}", self.id, wid);
 
+        let mut need_focus_change = false;
         if let Some(focused) = self.ctx.get_focused_window()? {
             if self.window_mut(focused).is_some() {
-                self.focus_next()?;
+                need_focus_change = true
             }
         }
 
         let wid = self.window_mut(wid).expect("unknown window").id();
         let win = self.wins.remove(&wid).expect("unknown window");
-        self.refresh_layout()?;
 
+        if need_focus_change {
+            self.focus_next()?;
+        }
+
+        self.refresh_layout()?;
         Ok(win)
     }
 

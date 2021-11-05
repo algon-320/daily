@@ -190,6 +190,8 @@ impl WinMan {
     }
 
     fn setup_monitor(&mut self) -> Result<()> {
+        self.ctx.focus_window(self.ctx.root)?; // HACK
+
         let monitors_reply = self
             .ctx
             .conn
@@ -198,7 +200,7 @@ impl WinMan {
         self.monitor_num = monitors_reply.monitors.len();
 
         for screen in self.screens.iter_mut() {
-            screen.detach()?;
+            let _ = screen.detach()?;
         }
 
         let max_num = std::cmp::max(self.monitor_num, MAX_SCREENS);
@@ -288,9 +290,18 @@ impl WinMan {
                 return Ok(());
             }
 
+            // HACK:
+            //   Avoid generation of FocusIn event with detail=PointerRoot/None
+            //   between a detach and the following attach.
+            self.ctx.focus_window(self.ctx.root)?;
+
             // perfom swap
             let (screen_a, screen_b) = get_mut_pair(&mut self.screens, a, b);
-            Screen::swap_monitor(screen_a, screen_b)?;
+            let mon_a = screen_a.detach()?.expect("focus inconsistent");
+            let mon_b = screen_b.detach()?.expect("focus inconsistent");
+
+            screen_a.attach(mon_b)?;
+            screen_b.attach(mon_a)?;
 
             screen_b.focus_any()?;
         }
@@ -475,7 +486,9 @@ impl EventHandlerMethods for WinMan {
 
     fn on_map_request(&mut self, req: MapRequestEvent) -> Result<HandleResult> {
         if let Some(win) = self.window_mut(req.window) {
-            return win.on_map_request(req);
+            let res = win.on_map_request(req);
+            self.focus_changed()?;
+            return res;
         }
         Ok(HandleResult::Ignored)
     }
@@ -494,16 +507,18 @@ impl EventHandlerMethods for WinMan {
 
     fn on_unmap_notify(&mut self, notif: UnmapNotifyEvent) -> Result<HandleResult> {
         if let Some(win) = self.window_mut(notif.window) {
-            return win.on_unmap_notify(notif);
+            let res = win.on_unmap_notify(notif);
+            self.focus_changed()?;
+            return res;
         }
         Ok(HandleResult::Ignored)
     }
 
     fn on_destroy_notify(&mut self, notif: DestroyNotifyEvent) -> Result<HandleResult> {
-        if let Some(win) = self.window_mut(notif.window) {
-            let res = win.on_destroy_notify(notif);
+        if let Some(screen) = self.container_of_mut(notif.window) {
+            let _ = screen.forget_window(notif.window)?;
             self.focus_changed()?;
-            return res;
+            return Ok(HandleResult::Consumed);
         }
         Ok(HandleResult::Ignored)
     }
@@ -566,13 +581,15 @@ impl EventHandlerMethods for WinMan {
             randr::Notify::CRTC_CHANGE => {
                 debug!("CRTC_CHANGE: {:?}", notif.u.as_cc());
                 self.setup_monitor()?;
-                self.refresh_layout()?;
+                self.screens[0].focus_any()?;
+                self.focus_changed()?;
             }
 
             randr::Notify::OUTPUT_CHANGE => {
                 debug!("OUTPUT_CHANGE: {:?}", notif.u.as_oc());
                 self.setup_monitor()?;
-                self.refresh_layout()?;
+                self.screens[0].focus_any()?;
+                self.focus_changed()?;
             }
             _ => {}
         }

@@ -45,6 +45,7 @@ pub struct Window {
     frame: Option<Wid>,
     inner: Wid,
     state: WindowState,
+    ignore_unmap: usize,
 }
 
 impl Window {
@@ -59,6 +60,7 @@ impl Window {
             frame: None,
             inner,
             state,
+            ignore_unmap: 0,
         })
     }
 
@@ -76,6 +78,7 @@ impl Window {
             frame: Some(frame),
             inner,
             state,
+            ignore_unmap: 0,
         })
     }
 
@@ -118,7 +121,14 @@ impl Window {
             if let Some(frame) = self.frame {
                 self.ctx.conn.unmap_window(frame)?;
             }
-            self.ctx.conn.unmap_window(self.inner)?;
+
+            // the reply() will return Err if the self.inner has been already destroyed.
+            if let Ok(attr) = self.ctx.conn.get_window_attributes(self.inner)?.reply() {
+                if attr.map_state != MapState::UNMAPPED {
+                    self.ctx.conn.unmap_window(self.inner)?;
+                    self.ignore_unmap += 1;
+                }
+            }
 
             self.state = WindowState::Unmapped;
         }
@@ -129,6 +139,7 @@ impl Window {
         if self.state != WindowState::Hidden {
             let wid = self.frame.unwrap_or(self.inner);
             self.ctx.conn.unmap_window(wid)?;
+            self.ignore_unmap += 1;
 
             self.state = WindowState::Hidden;
         }
@@ -190,12 +201,17 @@ impl EventHandlerMethods for Window {
             return Ok(HandleResult::Ignored);
         }
 
-        self.map()?;
+        // self.map()?;
         Ok(HandleResult::Consumed)
     }
 
     fn on_unmap_notify(&mut self, notif: UnmapNotifyEvent) -> Result<HandleResult> {
         if !self.contains(notif.window) {
+            return Ok(HandleResult::Ignored);
+        }
+
+        if self.ignore_unmap > 0 {
+            self.ignore_unmap -= 1;
             return Ok(HandleResult::Ignored);
         }
 
