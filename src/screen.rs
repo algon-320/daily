@@ -6,7 +6,7 @@ use x11rb::protocol::xproto::{Window as Wid, *};
 
 use crate::context::Context;
 use crate::error::Result;
-use crate::event::EventHandlerMethods;
+use crate::event::{EventHandlerMethods, HandleResult};
 use crate::layout::{self, Layout};
 use crate::window::{Window, WindowState};
 use crate::winman::Monitor;
@@ -18,6 +18,8 @@ pub struct Screen {
     monitor: Option<Monitor>,
     wins: BTreeMap<Wid, Window>,
     background: Window, // background window
+    bar: Window,        // the status bar window
+    bar_gc: Gcontext,   // used for drawings on the bar
     layouts: Vec<Box<dyn Layout>>,
     current_layout: usize,
     border_visible: bool,
@@ -57,6 +59,42 @@ impl Screen {
             Window::new(ctx.clone(), wid, WindowState::Unmapped)?
         };
 
+        let bar = {
+            let wid = ctx.conn.generate_id()?;
+            let aux = CreateWindowAux::new()
+                .background_pixel(0x242424)
+                .event_mask(EventMask::EXPOSURE)
+                .override_redirect(1); // special window
+            ctx.conn.create_window(
+                x11rb::COPY_DEPTH_FROM_PARENT,
+                wid,
+                ctx.root,
+                0,  // x
+                0,  // y
+                16, // w
+                16, // h
+                0,
+                WindowClass::INPUT_OUTPUT,
+                x11rb::COPY_FROM_PARENT,
+                &aux,
+            )?;
+            Window::new(ctx.clone(), wid, WindowState::Unmapped)?
+        };
+
+        let bar_gc = {
+            let font = ctx.conn.generate_id()?;
+            ctx.conn.open_font(font, b"*")?.check()?;
+
+            let gc = ctx.conn.generate_id()?;
+            let aux = CreateGCAux::new()
+                .font(font)
+                .background(0x242424)
+                .foreground(0xFFFFFF);
+            ctx.conn.create_gc(gc, bar.id(), &aux)?;
+            ctx.conn.close_font(font)?;
+            gc
+        };
+
         let mut layouts: Vec<Box<dyn Layout>> = Vec::new();
 
         // let horizontal = layout::Horizontal::new(ctx.clone());
@@ -83,6 +121,8 @@ impl Screen {
             monitor: None,
             wins: Default::default(),
             background,
+            bar,
+            bar_gc,
             layouts,
             current_layout,
             border_visible: false,
@@ -102,6 +142,7 @@ impl Screen {
         self.update_background()?;
 
         self.background.map()?;
+        self.bar.map()?;
 
         for win in self.wins.values_mut() {
             let state = win.state();
@@ -127,6 +168,7 @@ impl Screen {
         );
 
         self.background.unmap()?;
+        self.bar.unmap()?;
 
         for w in self.wins.values_mut() {
             if w.is_mapped() {
@@ -148,6 +190,29 @@ impl Screen {
             .stack_mode(StackMode::BELOW);
         let id = self.background.id();
         self.ctx.conn.configure_window(id, &aux)?;
+
+        let aux = ConfigureWindowAux::new()
+            .x(mon.info.x as i32)
+            .y(mon.info.y as i32)
+            .width(mon.info.width as u32)
+            .height(16)
+            .stack_mode(StackMode::ABOVE);
+        let id = self.bar.id();
+        self.ctx.conn.configure_window(id, &aux)?;
+        self.ctx.conn.flush()?;
+
+        let mut status = String::new();
+        for i in 0..5 {
+            if i == self.id {
+                status += &format!("[{}]", i);
+            } else {
+                status += &format!(" {} ", i);
+            }
+        }
+        self.ctx
+            .conn
+            .image_text8(self.bar.id(), self.bar_gc, 0, 13, status.as_bytes())?;
+        self.ctx.conn.flush()?;
         Ok(())
     }
 
@@ -208,8 +273,14 @@ impl Screen {
         wins.sort_unstable_by_key(|w| w.id());
 
         let mon = self.monitor.as_ref().unwrap();
+        let mut mon_info = mon.info.clone();
+
+        // make a space for the bar
+        mon_info.y += 16;
+        mon_info.height -= 16;
+
         let layout = &mut self.layouts[self.current_layout];
-        layout.layout(&mon.info, &wins, self.border_visible)?;
+        layout.layout(&mon_info, &wins, self.border_visible)?;
 
         // update highlight
         {
@@ -240,6 +311,7 @@ impl Screen {
 
     pub fn contains(&self, wid: Wid) -> bool {
         self.background.contains(wid)
+            || self.bar.contains(wid)
             || self.wins.contains_key(&wid)
             || self.wins.values().any(|win| win.contains(wid))
     }
@@ -247,6 +319,8 @@ impl Screen {
     pub fn window_mut(&mut self, wid: Wid) -> Option<&mut Window> {
         if self.background.contains(wid) {
             Some(&mut self.background)
+        } else if self.bar.contains(wid) {
+            Some(&mut self.bar)
         } else {
             self.wins.values_mut().find(|win| win.contains(wid))
         }
@@ -307,5 +381,8 @@ impl Screen {
 }
 
 impl EventHandlerMethods for Screen {
-    // use default impls
+    fn on_expose(&mut self, _ev: ExposeEvent) -> Result<HandleResult> {
+        self.update_background()?;
+        Ok(HandleResult::Consumed)
+    }
 }

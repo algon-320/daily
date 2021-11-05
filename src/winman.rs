@@ -539,6 +539,13 @@ impl EventHandlerMethods for WinMan {
         Ok(HandleResult::Ignored)
     }
 
+    fn on_expose(&mut self, ev: ExposeEvent) -> Result<HandleResult> {
+        if let Some(screen) = self.container_of_mut(ev.window) {
+            return screen.on_expose(ev);
+        }
+        Ok(HandleResult::Ignored)
+    }
+
     fn on_focus_in(&mut self, focus_in: FocusInEvent) -> Result<HandleResult> {
         if focus_in.event == self.ctx.root {
             if focus_in.detail == NotifyDetail::POINTER_ROOT

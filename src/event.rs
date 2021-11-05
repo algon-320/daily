@@ -33,6 +33,7 @@ pub trait EventHandlerMethods {
     event_handler_ignore!(on_destroy_notify, DestroyNotifyEvent);
     event_handler_ignore!(on_configure_request, ConfigureRequestEvent);
     event_handler_ignore!(on_configure_notify, ConfigureNotifyEvent);
+    event_handler_ignore!(on_expose, ExposeEvent);
     event_handler_ignore!(on_focus_in, FocusInEvent);
     event_handler_ignore!(on_focus_out, FocusInEvent);
     event_handler_ignore!(on_randr_notify, randr::NotifyEvent);
@@ -53,6 +54,7 @@ impl<T: EventHandlerMethods> EventHandler for T {
             Event::DestroyNotify(e) => self.on_destroy_notify(e),
             Event::ConfigureRequest(e) => self.on_configure_request(e),
             Event::ConfigureNotify(e) => self.on_configure_notify(e),
+            Event::Expose(e) => self.on_expose(e),
             Event::FocusIn(e) => self.on_focus_in(e),
             Event::FocusOut(e) => self.on_focus_out(e),
             Event::RandrNotify(e) => self.on_randr_notify(e),

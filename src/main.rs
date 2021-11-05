@@ -58,14 +58,15 @@ fn main() {
     use std::process::exit;
 
     info!("hello");
-    match start(None) {
+    let status = match start(None) {
         Ok(()) | Err(Error::Quit) => {
             info!("goodbye");
-            exit(0);
+            0
         }
         Err(err) => {
             error!("{}", err);
-            exit(1);
+            1
         }
-    }
+    };
+    exit(status);
 }
