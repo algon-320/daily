@@ -20,6 +20,7 @@ pub enum Command {
     ShowBorder,
     HideBorder,
     Close,
+    Sink,
     FocusNext,
     FocusPrev,
     FocusNextMonitor,

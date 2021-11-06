@@ -396,7 +396,11 @@ impl Screen {
 
         debug!("screen.refresh_layout: id={}", self.id);
 
-        let mut wins: Vec<&Window> = self.wins.values().filter(|win| win.is_mapped()).collect();
+        let mut wins: Vec<&Window> = self
+            .wins
+            .values()
+            .filter(|win| win.is_mapped() && !win.is_floating())
+            .collect();
         wins.sort_unstable_by_key(|w| w.id());
 
         let mon = self.monitor.as_ref().unwrap();
@@ -415,6 +419,21 @@ impl Screen {
         }
 
         layout.layout(&mon_info, &wins, self.border_visible)?;
+
+        // floating windows
+        for win in self
+            .wins
+            .values()
+            .filter(|win| win.is_mapped() && win.is_floating())
+        {
+            let geo = win.get_float_geometry().unwrap();
+            let aux = ConfigureWindowAux::new()
+                .x((mon.info.x + geo.x) as i32)
+                .y((mon.info.y + geo.y) as i32)
+                .width(geo.width as u32)
+                .height(geo.height as u32);
+            self.ctx.conn.configure_window(win.id(), &aux)?;
+        }
 
         // update highlight
         {

@@ -14,6 +14,7 @@ use std::convert::TryInto;
 //      T = 28,
 //      P = 33,
 //      Enter = 36,
+//      S = 39,
 //      J = 44,
 //      K = 45,
 //      C = 54,
@@ -45,6 +46,7 @@ keybind:
     - { action: Press,   mod: [Super],        key: 44,  command: FocusNextMonitor }
     - { action: Press,   mod: [Super],        key: 45,  command: FocusPrevMonitor }
     - { action: Press,   mod: [Super],        key: 65,  command: NextLayout }
+    - { action: Press,   mod: [Super],        key: 39,  command: Sink }
 
     - { action: Press,   mod: [],             key: 133, command: ShowBorder }
     - { action: Release, mod: [Super],        key: 133, command: HideBorder }

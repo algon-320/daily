@@ -76,6 +76,18 @@ fn simulate_click<C: Connection>(conn: &C, button: u8, duration_ms: u32) -> Resu
 const MAX_SCREENS: usize = 10;
 
 #[derive(Debug)]
+struct MouseDrag {
+    wid: Wid,
+    state: u16,
+    start_x: i16,
+    start_y: i16,
+    window_x: i16,
+    window_y: i16,
+    window_w: u16,
+    window_h: u16,
+}
+
+#[derive(Debug)]
 pub struct Monitor {
     pub id: usize,
     pub info: randr::MonitorInfo,
@@ -86,6 +98,7 @@ pub struct WinMan {
     ctx: Context,
     screens: Vec<Screen>,
     monitor_num: usize,
+    drag: Option<MouseDrag>,
 }
 
 impl WinMan {
@@ -94,6 +107,7 @@ impl WinMan {
             ctx,
             screens: Vec::new(),
             monitor_num: 0,
+            drag: None,
         };
         wm.init()?;
         Ok(wm)
@@ -103,7 +117,10 @@ impl WinMan {
         // Become a window manager of the root window.
         let mask = EventMask::SUBSTRUCTURE_NOTIFY
             | EventMask::SUBSTRUCTURE_REDIRECT
-            | EventMask::FOCUS_CHANGE;
+            | EventMask::FOCUS_CHANGE
+            | EventMask::BUTTON_PRESS
+            | EventMask::BUTTON_RELEASE
+            | EventMask::BUTTON_MOTION;
         let aux = ChangeWindowAttributesAux::new().event_mask(mask);
         self.ctx
             .conn
@@ -128,22 +145,26 @@ impl WinMan {
         }
 
         // Grab mouse buttons
-        let event_mask: u32 = (EventMask::BUTTON_PRESS | EventMask::BUTTON_RELEASE).into();
-        self.ctx
-            .conn
-            .grab_button(
-                false,
-                self.ctx.root,
-                event_mask as u16,
-                GrabMode::SYNC,
-                GrabMode::ASYNC,
-                self.ctx.root,
-                x11rb::NONE,
-                ButtonIndex::M1,
-                ModMask::ANY,
-            )?
-            .check()
-            .map_err(|_| Error::ButtonAlreadyGrabbed)?;
+        let event_mask: u32 =
+            (EventMask::BUTTON_PRESS | EventMask::BUTTON_RELEASE | EventMask::BUTTON_MOTION).into();
+        // Mouse left and right button
+        for button in [ButtonIndex::M1, ButtonIndex::M3] {
+            self.ctx
+                .conn
+                .grab_button(
+                    false,
+                    self.ctx.root,
+                    event_mask as u16,
+                    GrabMode::SYNC,  // pointer
+                    GrabMode::ASYNC, // keyboard
+                    self.ctx.root,
+                    x11rb::NONE,
+                    button,
+                    ModMask::ANY,
+                )?
+                .check()
+                .map_err(|_| Error::ButtonAlreadyGrabbed)?;
+        }
 
         // Receive RROutputChangeNotify / RRCrtcChangeNotify
         self.ctx.conn.randr_select_input(
@@ -384,6 +405,18 @@ impl WinMan {
                 }
             }
 
+            Command::Sink => {
+                if let Some(wid) = self.ctx.get_focused_window()? {
+                    if let Some(screen) = self.container_of_mut(wid) {
+                        if !screen.background().contains(wid) && !screen.bar().contains(wid) {
+                            let win = screen.window_mut(wid).unwrap();
+                            win.sink();
+                            self.refresh_layout()?;
+                        }
+                    }
+                }
+            }
+
             Command::FocusNext => {
                 self.focused_screen_mut()?.focus_next()?;
                 self.focus_changed()?;
@@ -457,19 +490,126 @@ impl EventHandlerMethods for WinMan {
     }
 
     fn on_button_press(&mut self, e: ButtonPressEvent) -> Result<HandleResult> {
-        self.ctx
-            .conn
-            .allow_events(Allow::REPLAY_POINTER, x11rb::CURRENT_TIME)?
-            .check()?;
+        if e.state & u16::from(ModMask::M1) > 0 {
+            // button + Alt
+            self.ctx
+                .conn
+                .allow_events(Allow::SYNC_POINTER, x11rb::CURRENT_TIME)?
+                .check()?;
 
-        let win = self.window_mut(e.child);
-        if e.child != x11rb::NONE && win.is_some() {
-            win.unwrap().focus()?;
-            self.focus_changed()?;
+            if let Some(win) = self.window_mut(e.child) {
+                let wid = win.id();
+                let geo = self.ctx.conn.get_geometry(wid)?.reply()?;
+
+                let screen = self.container_of_mut(wid).unwrap();
+                if let Some(mon_info) = screen.monitor().map(|mon| &mon.info) {
+                    let mon_x = mon_info.x;
+                    let mon_y = mon_info.y;
+
+                    let rel_x = geo.x - mon_x;
+                    let rel_y = geo.y - mon_y;
+
+                    let win = screen.window_mut(wid).unwrap();
+                    win.float(Rectangle {
+                        x: rel_x,
+                        y: rel_y,
+                        width: geo.width,
+                        height: geo.height,
+                    })?;
+
+                    self.drag = Some(MouseDrag {
+                        wid,
+                        state: e.state,
+                        start_x: e.root_x,
+                        start_y: e.root_y,
+                        window_x: geo.x,
+                        window_y: geo.y,
+                        window_w: geo.width,
+                        window_h: geo.height,
+                    });
+
+                    self.refresh_layout()?;
+                }
+            }
+
             Ok(HandleResult::Consumed)
         } else {
-            Ok(HandleResult::Ignored)
+            self.ctx
+                .conn
+                .allow_events(Allow::REPLAY_POINTER, x11rb::CURRENT_TIME)?
+                .check()?;
+
+            let win = self.window_mut(e.child);
+            if e.child != x11rb::NONE && win.is_some() {
+                win.unwrap().focus()?;
+                self.focus_changed()?;
+                Ok(HandleResult::Consumed)
+            } else {
+                Ok(HandleResult::Ignored)
+            }
         }
+    }
+
+    fn on_motion_notify(&mut self, e: MotionNotifyEvent) -> Result<HandleResult> {
+        let alt_left = u16::from(ModMask::M1) | u16::from(ButtonMask::M1);
+        let alt_right = u16::from(ModMask::M1) | u16::from(ButtonMask::M3);
+
+        if (e.state & alt_left == 0) && (e.state & alt_right == 0) {
+            return Ok(HandleResult::Ignored);
+        }
+
+        if let Some(drag) = self.drag.as_ref() {
+            let dx = e.root_x - drag.start_x;
+            let dy = e.root_y - drag.start_y;
+
+            if e.state & alt_left > 0 {
+                // Left button
+                let aux = ConfigureWindowAux::new()
+                    .x((drag.window_x + dx) as i32)
+                    .y((drag.window_y + dy) as i32);
+                self.ctx.conn.configure_window(drag.wid, &aux)?;
+            } else if e.state & alt_right > 0 {
+                // Right button
+                let w = drag.window_w as i32 + dx as i32;
+                let h = drag.window_h as i32 + dy as i32;
+                let w = std::cmp::max(w, 1);
+                let h = std::cmp::max(h, 1);
+
+                let aux = ConfigureWindowAux::new().width(w as u32).height(h as u32);
+                self.ctx.conn.configure_window(drag.wid, &aux)?;
+            }
+        }
+        Ok(HandleResult::Consumed)
+    }
+
+    fn on_button_release(&mut self, _: ButtonReleaseEvent) -> Result<HandleResult> {
+        let wid = match self.drag.as_ref() {
+            None => return Ok(HandleResult::Consumed),
+            Some(drag) => drag.wid,
+        };
+        let geo = self.ctx.conn.get_geometry(wid)?.reply()?;
+
+        let screen = match self.container_of_mut(wid) {
+            None => return Ok(HandleResult::Consumed),
+            Some(s) => s,
+        };
+
+        let mon_info = match screen.monitor() {
+            None => return Ok(HandleResult::Consumed),
+            Some(mon) => mon.info.clone(),
+        };
+
+        let win = screen.window_mut(wid).unwrap();
+        win.set_float_geometry(Rectangle {
+            x: geo.x - mon_info.x,
+            y: geo.y - mon_info.y,
+            width: geo.width,
+            height: geo.height,
+        });
+        self.refresh_layout()?;
+
+        self.drag = None;
+        Ok(HandleResult::Consumed)
     }
 
     fn on_create_notify(&mut self, notif: CreateNotifyEvent) -> Result<HandleResult> {

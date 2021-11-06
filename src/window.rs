@@ -46,6 +46,7 @@ pub struct Window {
     inner: Wid,
     state: WindowState,
     ignore_unmap: usize,
+    float_geometry: Option<Rectangle>,
 }
 
 impl Window {
@@ -61,6 +62,7 @@ impl Window {
             inner,
             state,
             ignore_unmap: 0,
+            float_geometry: None,
         })
     }
 
@@ -79,6 +81,7 @@ impl Window {
             inner,
             state,
             ignore_unmap: 0,
+            float_geometry: None,
         })
     }
 
@@ -96,6 +99,31 @@ impl Window {
 
     pub fn contains(&self, wid: Wid) -> bool {
         self.inner == wid || self.frame == Some(wid)
+    }
+
+    pub fn float(&mut self, rect: Rectangle) -> Result<()> {
+        let wid = self.id();
+
+        // put this window at the top of window stack
+        let aux = ConfigureWindowAux::new().stack_mode(StackMode::ABOVE);
+        self.ctx.conn.configure_window(wid, &aux)?;
+
+        self.float_geometry = Some(rect);
+        Ok(())
+    }
+    pub fn sink(&mut self) {
+        self.float_geometry = None;
+    }
+    pub fn is_floating(&self) -> bool {
+        self.float_geometry.is_some()
+    }
+
+    pub fn set_float_geometry(&mut self, rect: Rectangle) {
+        assert!(self.is_floating());
+        self.float_geometry = Some(rect);
+    }
+    pub fn get_float_geometry(&self) -> Option<Rectangle> {
+        self.float_geometry
     }
 
     pub fn map(&mut self) -> Result<()> {

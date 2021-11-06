@@ -26,6 +26,7 @@ pub trait EventHandlerMethods {
     event_handler_ignore!(on_key_release, KeyReleaseEvent);
     event_handler_ignore!(on_button_press, ButtonPressEvent);
     event_handler_ignore!(on_button_release, ButtonReleaseEvent);
+    event_handler_ignore!(on_motion_notify, MotionNotifyEvent);
     event_handler_ignore!(on_map_request, MapRequestEvent);
     event_handler_ignore!(on_map_notify, MapNotifyEvent);
     event_handler_ignore!(on_unmap_notify, UnmapNotifyEvent);
@@ -47,6 +48,7 @@ impl<T: EventHandlerMethods> EventHandler for T {
             Event::KeyRelease(e) => self.on_key_release(e),
             Event::ButtonPress(e) => self.on_button_press(e),
             Event::ButtonRelease(e) => self.on_button_release(e),
+            Event::MotionNotify(e) => self.on_motion_notify(e),
             Event::MapRequest(e) => self.on_map_request(e),
             Event::MapNotify(e) => self.on_map_notify(e),
             Event::UnmapNotify(e) => self.on_unmap_notify(e),
