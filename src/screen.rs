@@ -249,6 +249,7 @@ impl Screen {
             .y(mon.info.y as i32)
             .width(mon.info.width as u32)
             .height(16)
+            .sibling(self.background.id())
             .stack_mode(StackMode::ABOVE);
         let id = self.bar.id();
         self.ctx.conn.configure_window(id, &aux)?;
@@ -402,6 +403,13 @@ impl Screen {
         mon_info.height -= 16;
 
         let layout = &mut self.layouts[self.current_layout];
+
+        // revert it
+        if layout.name() == "full-screen" {
+            mon_info.y -= 16;
+            mon_info.height += 16;
+        }
+
         layout.layout(&mon_info, &wins, self.border_visible)?;
 
         // update highlight
