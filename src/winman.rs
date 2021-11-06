@@ -299,22 +299,22 @@ impl WinMan {
 
         debug!("switch to screen: {}", id);
 
-        if self.screens[id].monitor().is_none() {
-            let old_id = self.focused_screen_mut()?.id;
+        let current_id = self.focused_screen_mut()?.id;
 
+        if self.screens[id].monitor().is_none() {
             // HACK:
             //   Avoid generation of FocusIn event with detail=PointerRoot/None
             //   between a detach and the following attach.
             self.ctx.focus_window(self.ctx.root)?;
 
-            let old = &mut self.screens[old_id];
-            let mon_info = old.detach()?.expect("focus inconsistent");
+            let current = &mut self.screens[current_id];
+            let mon_info = current.detach()?.expect("focus inconsistent");
 
             let new = &mut self.screens[id];
             new.attach(mon_info)?;
             new.focus_any()?;
         } else {
-            let a = self.focused_screen_mut()?.id;
+            let a = current_id;
             let b = id;
 
             // no swap needed
