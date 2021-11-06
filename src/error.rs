@@ -5,9 +5,11 @@ use x11rb::errors::ReplyOrIdError;
 pub enum Error {
     #[error("Terminated by user.")]
     Quit,
+    #[error("Restarted by user.")]
+    Restart,
+
     #[error("Cannot connect with the X server.")]
     ConnectionFailed,
-
     #[error("Another window manager already exists.")]
     WmAlreadyExists,
     #[error("Another client has already grabbed the key we want to use.")]

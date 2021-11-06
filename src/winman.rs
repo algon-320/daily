@@ -358,6 +358,7 @@ impl WinMan {
     fn process_command(&mut self, cmd: Command) -> Result<()> {
         match cmd {
             Command::Quit => return Err(Error::Quit),
+            Command::Restart => return Err(Error::Restart),
 
             Command::ShowBorder => {
                 for screen in self.screens.iter_mut() {

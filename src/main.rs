@@ -16,6 +16,7 @@ pub enum KeybindAction {
 #[derive(Debug, Clone, Hash, PartialEq, Eq, serde::Deserialize)]
 pub enum Command {
     Quit,
+    Restart,
     ShowBorder,
     HideBorder,
     Close,
@@ -62,6 +63,10 @@ fn main() {
         Ok(()) | Err(Error::Quit) => {
             info!("goodbye");
             0
+        }
+        Err(Error::Restart) => {
+            info!("try to restart");
+            2
         }
         Err(err) => {
             error!("{}", err);
