@@ -445,6 +445,10 @@ impl Screen {
         &self.background
     }
 
+    pub fn bar(&self) -> &Window {
+        &self.bar
+    }
+
     pub fn contains(&self, wid: Wid) -> bool {
         self.background.contains(wid)
             || self.bar.contains(wid)

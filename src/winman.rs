@@ -319,7 +319,7 @@ impl WinMan {
         let focus = self.ctx.get_focused_window()?;
         if let Some(wid) = focus {
             if let Some(src) = self.container_of_mut(wid) {
-                if src.background().contains(wid) {
+                if src.background().contains(wid) || src.bar().contains(wid) {
                     return Ok(());
                 }
 
@@ -366,7 +366,7 @@ impl WinMan {
             Command::Close => {
                 if let Some(wid) = self.ctx.get_focused_window()? {
                     if let Some(screen) = self.container_of_mut(wid) {
-                        if !screen.background().contains(wid) {
+                        if !screen.background().contains(wid) && !screen.bar().contains(wid) {
                             let _ = screen.forget_window(wid);
                             self.refresh_layout()?;
                         }
