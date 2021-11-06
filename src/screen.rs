@@ -11,6 +11,59 @@ use crate::layout::{self, Layout};
 use crate::window::{Window, WindowState};
 use crate::winman::Monitor;
 
+fn draw_digit<C: Connection>(
+    conn: &C,
+    wid: Drawable,
+    gc: Gcontext,
+    x: i16,
+    y: i16,
+    ascii_digit: u8,
+    color1: u32,
+    color2: u32,
+) -> Result<()> {
+    const DIGITS: [[u32; 6 * 6]; 10 + 3] = include!("digits.txt");
+
+    let digit = if (b'0'..=b'9').contains(&ascii_digit) {
+        ascii_digit - b'0'
+    } else if ascii_digit == b':' {
+        10
+    } else if ascii_digit == b'/' {
+        11
+    } else if ascii_digit == b' ' {
+        12
+    } else {
+        panic!(
+            "unsupported char: {}",
+            char::from_u32(ascii_digit as u32).unwrap()
+        );
+    };
+
+    let mut ps1 = Vec::new();
+    let mut ps2 = Vec::new();
+    for (p, &e) in DIGITS[digit as usize].iter().enumerate() {
+        let (yi, xi) = (p / 6, p % 6);
+        let point = Point {
+            x: x + xi as i16,
+            y: y + yi as i16,
+        };
+        if e == 1 {
+            ps1.push(point);
+        } else if e == 2 {
+            ps2.push(point);
+        }
+    }
+
+    let aux = ChangeGCAux::new().foreground(color1);
+    conn.change_gc(gc, &aux)?;
+    conn.poly_point(CoordMode::ORIGIN, wid, gc, &ps1)?;
+
+    let aux = ChangeGCAux::new().foreground(color2);
+    conn.change_gc(gc, &aux)?;
+    conn.poly_point(CoordMode::ORIGIN, wid, gc, &ps2)?;
+
+    Ok(())
+}
+
 #[derive()]
 pub struct Screen {
     ctx: Context,
@@ -62,7 +115,7 @@ impl Screen {
         let bar = {
             let wid = ctx.conn.generate_id()?;
             let aux = CreateWindowAux::new()
-                .background_pixel(0x242424)
+                .background_pixel(0x4e4b61)
                 .event_mask(EventMask::EXPOSURE)
                 .override_redirect(1); // special window
             ctx.conn.create_window(
@@ -88,8 +141,8 @@ impl Screen {
             let gc = ctx.conn.generate_id()?;
             let aux = CreateGCAux::new()
                 .font(font)
-                .background(0x242424)
-                .foreground(0xFFFFFF);
+                .background(0x4e4b61)
+                .foreground(0xd2ca9c);
             ctx.conn.create_gc(gc, bar.id(), &aux)?;
             ctx.conn.close_font(font)?;
             gc
@@ -199,20 +252,89 @@ impl Screen {
             .stack_mode(StackMode::ABOVE);
         let id = self.bar.id();
         self.ctx.conn.configure_window(id, &aux)?;
-        self.ctx.conn.flush()?;
 
-        let mut status = String::new();
-        for i in 0..5 {
-            if i == self.id {
-                status += &format!("[{}]", i);
-            } else {
-                status += &format!(" {} ", i);
-            }
-        }
+        self.draw_bar()?;
+
+        Ok(())
+    }
+
+    fn draw_bar(&mut self) -> Result<()> {
+        let mon = self.monitor.as_ref().unwrap();
+        let w = mon.info.width as i16;
+
+        let bar = self.bar.id();
+        let gc = self.bar_gc;
+
+        let color_bg = 0x4e4b61;
+
+        // Lines
+        let aux = ChangeGCAux::new().foreground(0x69656d);
+        self.ctx.conn.change_gc(gc, &aux)?;
+
+        let p1 = Point { x: 0, y: 14 };
+        let p2 = Point { x: 0, y: 0 };
+        let p3 = Point { x: w - 2, y: 0 };
         self.ctx
             .conn
-            .image_text8(self.bar.id(), self.bar_gc, 0, 13, status.as_bytes())?;
-        self.ctx.conn.flush()?;
+            .poly_line(CoordMode::ORIGIN, bar, gc, &[p1, p2, p3])?;
+
+        let aux = ChangeGCAux::new().foreground(0x1a1949);
+        self.ctx.conn.change_gc(gc, &aux)?;
+
+        let p1 = Point { x: 1, y: 15 };
+        let p2 = Point { x: w - 1, y: 15 };
+        let p3 = Point { x: w - 1, y: 1 };
+        self.ctx
+            .conn
+            .poly_line(CoordMode::ORIGIN, bar, gc, &[p1, p2, p3])?;
+
+        // Digits
+        let offset_x = 2;
+        let offset_y = 5;
+        for i in 0..5 {
+            let color1: u32 = if i == self.id { 0x00f080 } else { 0xd2ca9c };
+            let color2: u32 = if i == self.id { 0x007840 } else { 0x9d9784 };
+
+            let x = offset_x + (i * 12) as i16;
+            let y = offset_y;
+            let digit = b'1' + i as u8;
+            draw_digit(&self.ctx.conn, bar, gc, x, y, digit, color1, color2)?;
+        }
+
+        // clock
+        use chrono::prelude::*;
+        let mut x = w - 136;
+        let y = 5;
+
+        let aux = ChangeGCAux::new().foreground(color_bg).background(color_bg);
+        self.ctx.conn.change_gc(gc, &aux)?;
+
+        let rect = Rectangle {
+            x,
+            y,
+            width: (6 + 2) * 16,
+            height: 6,
+        };
+        self.ctx.conn.poly_fill_rectangle(bar, gc, &[rect])?;
+
+        let (color1, color2) = (0xd2ca9c, 0x9d9784);
+        let now = chrono::Local::now();
+        let date = now.date();
+        let time = now.time();
+
+        let date_time = format!(
+            "{:04}/{:02}/{:02} {:02}:{:02}",
+            date.year(),
+            date.month(),
+            date.day(),
+            time.hour(),
+            time.minute()
+        );
+        for &b in date_time.as_bytes() {
+            draw_digit(&self.ctx.conn, bar, gc, x, y, b, color1, color2)?;
+            x += 8;
+        }
+
         Ok(())
     }
 
@@ -302,6 +424,8 @@ impl Screen {
             }
         }
 
+        self.draw_bar()?;
+
         Ok(())
     }
 
@@ -382,7 +506,7 @@ impl Screen {
 
 impl EventHandlerMethods for Screen {
     fn on_expose(&mut self, _ev: ExposeEvent) -> Result<HandleResult> {
-        self.update_background()?;
+        self.draw_bar()?;
         Ok(HandleResult::Consumed)
     }
 }
