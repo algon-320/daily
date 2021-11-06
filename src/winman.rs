@@ -1,5 +1,6 @@
 use log::{debug, error, info, warn};
 
+use x11rb::connection::Connection;
 use x11rb::protocol::{
     randr::{self, ConnectionExt as _},
     xproto::{Window as Wid, *},
@@ -41,15 +42,14 @@ fn spawn_process(cmd: &str) -> Result<()> {
     Ok(())
 }
 
-fn move_pointer(ctx: &Context, dx: i16, dy: i16) -> Result<()> {
-    ctx.conn
-        .warp_pointer(x11rb::NONE, x11rb::NONE, 0, 0, 0, 0, dx, dy)?;
+fn move_pointer<C: Connection>(conn: &C, dx: i16, dy: i16) -> Result<()> {
+    conn.warp_pointer(x11rb::NONE, x11rb::NONE, 0, 0, 0, 0, dx, dy)?;
     Ok(())
 }
 
-fn simulate_click(ctx: &Context, button: u8, duration_ms: u32) -> Result<()> {
+fn simulate_click<C: Connection>(conn: &C, button: u8, duration_ms: u32) -> Result<()> {
     // button down
-    ctx.conn.xtest_fake_input(
+    conn.xtest_fake_input(
         BUTTON_PRESS_EVENT,
         button,
         x11rb::CURRENT_TIME,
@@ -60,7 +60,7 @@ fn simulate_click(ctx: &Context, button: u8, duration_ms: u32) -> Result<()> {
     )?;
 
     // button up
-    ctx.conn.xtest_fake_input(
+    conn.xtest_fake_input(
         BUTTON_RELEASE_EVENT,
         button,
         duration_ms,
@@ -409,8 +409,8 @@ impl WinMan {
             Command::Screen(id) => self.switch_screen(id)?,
             Command::MoveToScreen(id) => self.move_window_to_screen(id)?,
 
-            Command::MovePointerRel(dx, dy) => move_pointer(&self.ctx, dx, dy)?,
-            Command::MouseClickLeft => simulate_click(&self.ctx, 1, 10)?, // left, 10ms
+            Command::MovePointerRel(dx, dy) => move_pointer(&self.ctx.conn, dx, dy)?,
+            Command::MouseClickLeft => simulate_click(&self.ctx.conn, 1, 10)?, // left, 10ms
             Command::Spawn(cmd) => spawn_process(&cmd)?,
         }
         Ok(())
