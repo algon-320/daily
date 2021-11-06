@@ -53,13 +53,17 @@ fn draw_digit<C: Connection>(
         }
     }
 
-    let aux = ChangeGCAux::new().foreground(color1);
-    conn.change_gc(gc, &aux)?;
-    conn.poly_point(CoordMode::ORIGIN, wid, gc, &ps1)?;
+    if !ps1.is_empty() {
+        let aux = ChangeGCAux::new().foreground(color1);
+        conn.change_gc(gc, &aux)?;
+        conn.poly_point(CoordMode::ORIGIN, wid, gc, &ps1)?;
+    }
 
-    let aux = ChangeGCAux::new().foreground(color2);
-    conn.change_gc(gc, &aux)?;
-    conn.poly_point(CoordMode::ORIGIN, wid, gc, &ps2)?;
+    if !ps2.is_empty() {
+        let aux = ChangeGCAux::new().foreground(color2);
+        conn.change_gc(gc, &aux)?;
+        conn.poly_point(CoordMode::ORIGIN, wid, gc, &ps2)?;
+    }
 
     Ok(())
 }
