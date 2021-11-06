@@ -460,28 +460,35 @@ impl WinMan {
     }
 }
 
+macro_rules! unwrap_or_return {
+    ( $e:expr ) => {
+        match $e {
+            Some(x) => x,
+            None => return Ok(()),
+        }
+    };
+}
+
 impl EventHandlerMethods for WinMan {
     fn on_key_press(&mut self, e: KeyPressEvent) -> Result<()> {
-        if let Some(cmd) = self
-            .ctx
-            .config
-            .keybind_match(KeybindAction::Press, e.state, e.detail)
-        {
-            debug!("on_key_press: cmd = {:?}", cmd);
-            self.process_command(cmd)?;
-        }
+        let cmd = unwrap_or_return!(self.ctx.config.keybind_match(
+            KeybindAction::Press,
+            e.state,
+            e.detail
+        ));
+        debug!("on_key_press: cmd = {:?}", cmd);
+        self.process_command(cmd)?;
         Ok(())
     }
 
     fn on_key_release(&mut self, e: KeyReleaseEvent) -> Result<()> {
-        if let Some(cmd) = self
-            .ctx
-            .config
-            .keybind_match(KeybindAction::Release, e.state, e.detail)
-        {
-            debug!("on_key_release: cmd = {:?}", cmd);
-            self.process_command(cmd)?;
-        }
+        let cmd = unwrap_or_return!(self.ctx.config.keybind_match(
+            KeybindAction::Release,
+            e.state,
+            e.detail
+        ));
+        debug!("on_key_release: cmd = {:?}", cmd);
+        self.process_command(cmd)?;
         Ok(())
     }
 
@@ -493,40 +500,38 @@ impl EventHandlerMethods for WinMan {
                 .allow_events(Allow::SYNC_POINTER, x11rb::CURRENT_TIME)?
                 .check()?;
 
-            if let Some(win) = self.window_mut(e.child) {
-                let wid = win.id();
-                let geo = self.ctx.conn.get_geometry(wid)?.reply()?;
+            let win = unwrap_or_return!(self.window_mut(e.child));
+            let wid = win.id();
+            let geo = self.ctx.conn.get_geometry(wid)?.reply()?;
 
-                let screen = self.container_of_mut(wid).unwrap();
-                if let Some(mon_info) = screen.monitor().map(|mon| &mon.info) {
-                    let mon_x = mon_info.x;
-                    let mon_y = mon_info.y;
+            let screen = unwrap_or_return!(self.container_of_mut(wid));
+            let mon_info = unwrap_or_return!(screen.monitor().map(|mon| &mon.info));
+            let mon_x = mon_info.x;
+            let mon_y = mon_info.y;
 
-                    let rel_x = geo.x - mon_x;
-                    let rel_y = geo.y - mon_y;
+            let rel_x = geo.x - mon_x;
+            let rel_y = geo.y - mon_y;
 
-                    let win = screen.window_mut(wid).unwrap();
-                    win.float(Rectangle {
-                        x: rel_x,
-                        y: rel_y,
-                        width: geo.width,
-                        height: geo.height,
-                    })?;
+            let win = screen.window_mut(wid).unwrap();
+            win.float(Rectangle {
+                x: rel_x,
+                y: rel_y,
+                width: geo.width,
+                height: geo.height,
+            })?;
 
-                    self.drag = Some(MouseDrag {
-                        wid,
-                        state: e.state,
-                        start_x: e.root_x,
-                        start_y: e.root_y,
-                        window_x: geo.x,
-                        window_y: geo.y,
-                        window_w: geo.width,
-                        window_h: geo.height,
-                    });
+            self.drag = Some(MouseDrag {
+                wid,
+                state: e.state,
+                start_x: e.root_x,
+                start_y: e.root_y,
+                window_x: geo.x,
+                window_y: geo.y,
+                window_w: geo.width,
+                window_h: geo.height,
+            });
 
-                    self.refresh_layout()?;
-                }
-            }
+            self.refresh_layout()?;
         } else {
             self.ctx
                 .conn
@@ -550,53 +555,38 @@ impl EventHandlerMethods for WinMan {
             return Ok(());
         }
 
-        if let Some(drag) = self.drag.as_ref() {
-            let dx = e.root_x - drag.start_x;
-            let dy = e.root_y - drag.start_y;
+        let drag = unwrap_or_return!(self.drag.as_ref());
+        let dx = e.root_x - drag.start_x;
+        let dy = e.root_y - drag.start_y;
 
-            if e.state & left_mask > 0 {
-                // Left button
-                let aux = ConfigureWindowAux::new()
-                    .x((drag.window_x + dx) as i32)
-                    .y((drag.window_y + dy) as i32);
-                self.ctx.conn.configure_window(drag.wid, &aux)?;
-            } else if e.state & right_mask > 0 {
-                // Right button
-                let w = drag.window_w as i32 + dx as i32;
-                let h = drag.window_h as i32 + dy as i32;
-                let w = std::cmp::max(w, 1);
-                let h = std::cmp::max(h, 1);
+        if e.state & left_mask > 0 {
+            // Left button
+            let aux = ConfigureWindowAux::new()
+                .x((drag.window_x + dx) as i32)
+                .y((drag.window_y + dy) as i32);
+            self.ctx.conn.configure_window(drag.wid, &aux)?;
+        } else if e.state & right_mask > 0 {
+            // Right button
+            let w = drag.window_w as i32 + dx as i32;
+            let h = drag.window_h as i32 + dy as i32;
+            let w = std::cmp::max(w, 1);
+            let h = std::cmp::max(h, 1);
 
-                let aux = ConfigureWindowAux::new().width(w as u32).height(h as u32);
-                self.ctx.conn.configure_window(drag.wid, &aux)?;
-            }
+            let aux = ConfigureWindowAux::new().width(w as u32).height(h as u32);
+            self.ctx.conn.configure_window(drag.wid, &aux)?;
         }
         Ok(())
     }
 
     fn on_button_release(&mut self, _: ButtonReleaseEvent) -> Result<()> {
-        let wid = match self.drag.as_ref() {
-            None => {
-                self.drag = None;
-                return Ok(());
-            }
-            Some(drag) => {
-                let wid = drag.wid;
-                self.drag = None;
-                wid
-            }
-        };
+        let drag = unwrap_or_return!(self.drag.take());
+        let wid = drag.wid;
+
         let geo = self.ctx.conn.get_geometry(wid)?.reply()?;
 
-        let screen = match self.container_of_mut(wid) {
-            None => return Ok(()),
-            Some(s) => s,
-        };
-
-        let mon_info = match screen.monitor() {
-            None => return Ok(()),
-            Some(mon) => mon.info.clone(),
-        };
+        let screen = unwrap_or_return!(self.container_of_mut(wid));
+        let mon = unwrap_or_return!(screen.monitor());
+        let mon_info = mon.info.clone();
 
         let win = screen.window_mut(wid).unwrap();
         win.set_float_geometry(Rectangle {
@@ -632,10 +622,9 @@ impl EventHandlerMethods for WinMan {
     }
 
     fn on_map_request(&mut self, req: MapRequestEvent) -> Result<()> {
-        if let Some(win) = self.window_mut(req.window) {
-            win.on_map_request(req)?;
-            self.focus_changed()?;
-        }
+        let win = unwrap_or_return!(self.window_mut(req.window));
+        win.on_map_request(req)?;
+        self.focus_changed()?;
         Ok(())
     }
 
@@ -644,34 +633,29 @@ impl EventHandlerMethods for WinMan {
             return Ok(());
         }
 
-        let wid = notif.window;
-        if let Some(win) = self.window_mut(wid) {
-            win.on_map_notify(notif)?;
-            self.focus_changed()?;
-        }
+        let win = unwrap_or_return!(self.window_mut(notif.window));
+        win.on_map_notify(notif)?;
+        self.focus_changed()?;
         Ok(())
     }
 
     fn on_unmap_notify(&mut self, notif: UnmapNotifyEvent) -> Result<()> {
-        if let Some(win) = self.window_mut(notif.window) {
-            win.on_unmap_notify(notif)?;
-            self.focus_changed()?;
-        }
+        let win = unwrap_or_return!(self.window_mut(notif.window));
+        win.on_unmap_notify(notif)?;
+        self.focus_changed()?;
         Ok(())
     }
 
     fn on_destroy_notify(&mut self, notif: DestroyNotifyEvent) -> Result<()> {
-        if let Some(screen) = self.container_of_mut(notif.window) {
-            let _ = screen.forget_window(notif.window)?;
-            self.focus_changed()?;
-        }
+        let screen = unwrap_or_return!(self.container_of_mut(notif.window));
+        let _ = screen.forget_window(notif.window)?;
+        self.focus_changed()?;
         Ok(())
     }
 
     fn on_configure_request(&mut self, req: ConfigureRequestEvent) -> Result<()> {
-        if let Some(win) = self.window_mut(req.window) {
-            win.on_configure_request(req)?;
-        }
+        let win = unwrap_or_return!(self.window_mut(req.window));
+        win.on_configure_request(req)?;
         Ok(())
     }
 
@@ -680,16 +664,14 @@ impl EventHandlerMethods for WinMan {
             return Ok(());
         }
 
-        if let Some(win) = self.window_mut(notif.window) {
-            win.on_configure_notify(notif)?;
-        }
+        let win = unwrap_or_return!(self.window_mut(notif.window));
+        win.on_configure_notify(notif)?;
         Ok(())
     }
 
     fn on_expose(&mut self, ev: ExposeEvent) -> Result<()> {
-        if let Some(screen) = self.container_of_mut(ev.window) {
-            screen.on_expose(ev)?;
-        }
+        let screen = unwrap_or_return!(self.container_of_mut(ev.window));
+        screen.on_expose(ev)?;
         Ok(())
     }
 
