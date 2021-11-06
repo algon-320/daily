@@ -3,20 +3,15 @@ use log::{trace, warn};
 
 use x11rb::protocol::{randr, xproto::*, Event};
 
-pub enum HandleResult {
-    Consumed,
-    Ignored,
-}
-
 pub trait EventHandler {
-    fn handle_event(&mut self, event: Event) -> Result<HandleResult>;
+    fn handle_event(&mut self, event: Event) -> Result<()>;
 }
 
 macro_rules! event_handler_ignore {
     ($method_name:ident, $event_type:ty) => {
-        fn $method_name(&mut self, e: $event_type) -> Result<HandleResult> {
+        fn $method_name(&mut self, e: $event_type) -> Result<()> {
             trace!("(default) {}: Ignore {:?}", stringify!($method_name), e);
-            Ok(HandleResult::Ignored)
+            Ok(())
         }
     };
 }
@@ -41,7 +36,7 @@ pub trait EventHandlerMethods {
 }
 
 impl<T: EventHandlerMethods> EventHandler for T {
-    fn handle_event(&mut self, event: Event) -> Result<HandleResult> {
+    fn handle_event(&mut self, event: Event) -> Result<()> {
         trace!("event: {:?}", event);
         match event {
             Event::KeyPress(e) => self.on_key_press(e),
@@ -62,7 +57,7 @@ impl<T: EventHandlerMethods> EventHandler for T {
             Event::RandrNotify(e) => self.on_randr_notify(e),
             e => {
                 warn!("unhandled event: {:?}", e);
-                Ok(HandleResult::Ignored)
+                Ok(())
             }
         }
     }

@@ -6,7 +6,7 @@ use x11rb::protocol::xproto::{Window as Wid, *};
 
 use crate::context::Context;
 use crate::error::Result;
-use crate::event::{EventHandlerMethods, HandleResult};
+use crate::event::EventHandlerMethods;
 use crate::layout::{self, Layout};
 use crate::window::{Window, WindowState};
 use crate::winman::Monitor;
@@ -540,8 +540,8 @@ impl Screen {
 }
 
 impl EventHandlerMethods for Screen {
-    fn on_expose(&mut self, _ev: ExposeEvent) -> Result<HandleResult> {
+    fn on_expose(&mut self, _ev: ExposeEvent) -> Result<()> {
         self.draw_bar()?;
-        Ok(HandleResult::Consumed)
+        Ok(())
     }
 }

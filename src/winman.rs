@@ -9,7 +9,7 @@ use x11rb::protocol::{
 
 use crate::context::Context;
 use crate::error::{Error, Result};
-use crate::event::{EventHandlerMethods, HandleResult};
+use crate::event::EventHandlerMethods;
 use crate::screen::Screen;
 use crate::window::{Window, WindowState};
 use crate::{Command, KeybindAction};
@@ -461,7 +461,7 @@ impl WinMan {
 }
 
 impl EventHandlerMethods for WinMan {
-    fn on_key_press(&mut self, e: KeyPressEvent) -> Result<HandleResult> {
+    fn on_key_press(&mut self, e: KeyPressEvent) -> Result<()> {
         if let Some(cmd) = self
             .ctx
             .config
@@ -469,13 +469,11 @@ impl EventHandlerMethods for WinMan {
         {
             debug!("on_key_press: cmd = {:?}", cmd);
             self.process_command(cmd)?;
-            Ok(HandleResult::Consumed)
-        } else {
-            Ok(HandleResult::Ignored)
         }
+        Ok(())
     }
 
-    fn on_key_release(&mut self, e: KeyReleaseEvent) -> Result<HandleResult> {
+    fn on_key_release(&mut self, e: KeyReleaseEvent) -> Result<()> {
         if let Some(cmd) = self
             .ctx
             .config
@@ -483,13 +481,11 @@ impl EventHandlerMethods for WinMan {
         {
             debug!("on_key_release: cmd = {:?}", cmd);
             self.process_command(cmd)?;
-            Ok(HandleResult::Consumed)
-        } else {
-            Ok(HandleResult::Ignored)
         }
+        Ok(())
     }
 
-    fn on_button_press(&mut self, e: ButtonPressEvent) -> Result<HandleResult> {
+    fn on_button_press(&mut self, e: ButtonPressEvent) -> Result<()> {
         if e.state & u16::from(ModMask::M1) > 0 {
             // button + Alt
             self.ctx
@@ -531,8 +527,6 @@ impl EventHandlerMethods for WinMan {
                     self.refresh_layout()?;
                 }
             }
-
-            Ok(HandleResult::Consumed)
         } else {
             self.ctx
                 .conn
@@ -543,32 +537,30 @@ impl EventHandlerMethods for WinMan {
             if e.child != x11rb::NONE && win.is_some() {
                 win.unwrap().focus()?;
                 self.focus_changed()?;
-                Ok(HandleResult::Consumed)
-            } else {
-                Ok(HandleResult::Ignored)
             }
         }
+        Ok(())
     }
 
-    fn on_motion_notify(&mut self, e: MotionNotifyEvent) -> Result<HandleResult> {
-        let alt_left = u16::from(ModMask::M1) | u16::from(ButtonMask::M1);
-        let alt_right = u16::from(ModMask::M1) | u16::from(ButtonMask::M3);
+    fn on_motion_notify(&mut self, e: MotionNotifyEvent) -> Result<()> {
+        let left_mask: u16 = ButtonMask::M1.into();
+        let right_mask: u16 = ButtonMask::M3.into();
 
-        if (e.state & alt_left == 0) && (e.state & alt_right == 0) {
-            return Ok(HandleResult::Ignored);
+        if e.state & u16::from(ModMask::M1) == 0 || e.state & (left_mask | right_mask) == 0 {
+            return Ok(());
         }
 
         if let Some(drag) = self.drag.as_ref() {
             let dx = e.root_x - drag.start_x;
             let dy = e.root_y - drag.start_y;
 
-            if e.state & alt_left > 0 {
+            if e.state & left_mask > 0 {
                 // Left button
                 let aux = ConfigureWindowAux::new()
                     .x((drag.window_x + dx) as i32)
                     .y((drag.window_y + dy) as i32);
                 self.ctx.conn.configure_window(drag.wid, &aux)?;
-            } else if e.state & alt_right > 0 {
+            } else if e.state & right_mask > 0 {
                 // Right button
                 let w = drag.window_w as i32 + dx as i32;
                 let h = drag.window_h as i32 + dy as i32;
@@ -579,23 +571,30 @@ impl EventHandlerMethods for WinMan {
                 self.ctx.conn.configure_window(drag.wid, &aux)?;
             }
         }
-        Ok(HandleResult::Consumed)
+        Ok(())
     }
 
-    fn on_button_release(&mut self, _: ButtonReleaseEvent) -> Result<HandleResult> {
+    fn on_button_release(&mut self, _: ButtonReleaseEvent) -> Result<()> {
         let wid = match self.drag.as_ref() {
-            None => return Ok(HandleResult::Consumed),
-            Some(drag) => drag.wid,
+            None => {
+                self.drag = None;
+                return Ok(());
+            }
+            Some(drag) => {
+                let wid = drag.wid;
+                self.drag = None;
+                wid
+            }
         };
         let geo = self.ctx.conn.get_geometry(wid)?.reply()?;
 
         let screen = match self.container_of_mut(wid) {
-            None => return Ok(HandleResult::Consumed),
+            None => return Ok(()),
             Some(s) => s,
         };
 
         let mon_info = match screen.monitor() {
-            None => return Ok(HandleResult::Consumed),
+            None => return Ok(()),
             Some(mon) => mon.info.clone(),
         };
 
@@ -608,110 +607,105 @@ impl EventHandlerMethods for WinMan {
         });
         self.refresh_layout()?;
 
-        self.drag = None;
-        Ok(HandleResult::Consumed)
+        Ok(())
     }
 
-    fn on_create_notify(&mut self, notif: CreateNotifyEvent) -> Result<HandleResult> {
-        if !notif.override_redirect {
-            let attr = self.ctx.conn.get_window_attributes(notif.window)?.reply()?;
-            if attr.class == WindowClass::INPUT_ONLY {
-                return Ok(HandleResult::Consumed);
-            }
-
-            if self.container_of_mut(notif.window).is_some() {
-                return Ok(HandleResult::Ignored);
-            }
-
-            let win = Window::new(self.ctx.clone(), notif.window, WindowState::Created)?;
-
-            let screen = self.focused_screen_mut()?;
-            screen.add_window(win)?;
-
-            Ok(HandleResult::Consumed)
-        } else {
-            Ok(HandleResult::Ignored)
+    fn on_create_notify(&mut self, notif: CreateNotifyEvent) -> Result<()> {
+        if notif.override_redirect {
+            return Ok(());
         }
+
+        let attr = self.ctx.conn.get_window_attributes(notif.window)?.reply()?;
+        if attr.class == WindowClass::INPUT_ONLY {
+            return Ok(());
+        }
+
+        if self.container_of_mut(notif.window).is_some() {
+            return Ok(());
+        }
+
+        let win = Window::new(self.ctx.clone(), notif.window, WindowState::Created)?;
+
+        let screen = self.focused_screen_mut()?;
+        screen.add_window(win)?;
+        Ok(())
     }
 
-    fn on_map_request(&mut self, req: MapRequestEvent) -> Result<HandleResult> {
+    fn on_map_request(&mut self, req: MapRequestEvent) -> Result<()> {
         if let Some(win) = self.window_mut(req.window) {
-            let res = win.on_map_request(req);
+            win.on_map_request(req)?;
             self.focus_changed()?;
-            return res;
         }
-        Ok(HandleResult::Ignored)
+        Ok(())
     }
 
-    fn on_map_notify(&mut self, notif: MapNotifyEvent) -> Result<HandleResult> {
-        if !notif.override_redirect {
-            let wid = notif.window;
-            if let Some(win) = self.window_mut(wid) {
-                let res = win.on_map_notify(notif);
-                self.focus_changed()?;
-                return res;
-            }
+    fn on_map_notify(&mut self, notif: MapNotifyEvent) -> Result<()> {
+        if notif.override_redirect {
+            return Ok(());
         }
-        Ok(HandleResult::Ignored)
+
+        let wid = notif.window;
+        if let Some(win) = self.window_mut(wid) {
+            win.on_map_notify(notif)?;
+            self.focus_changed()?;
+        }
+        Ok(())
     }
 
-    fn on_unmap_notify(&mut self, notif: UnmapNotifyEvent) -> Result<HandleResult> {
+    fn on_unmap_notify(&mut self, notif: UnmapNotifyEvent) -> Result<()> {
         if let Some(win) = self.window_mut(notif.window) {
-            let res = win.on_unmap_notify(notif);
+            win.on_unmap_notify(notif)?;
             self.focus_changed()?;
-            return res;
         }
-        Ok(HandleResult::Ignored)
+        Ok(())
     }
 
-    fn on_destroy_notify(&mut self, notif: DestroyNotifyEvent) -> Result<HandleResult> {
+    fn on_destroy_notify(&mut self, notif: DestroyNotifyEvent) -> Result<()> {
         if let Some(screen) = self.container_of_mut(notif.window) {
             let _ = screen.forget_window(notif.window)?;
             self.focus_changed()?;
-            return Ok(HandleResult::Consumed);
         }
-        Ok(HandleResult::Ignored)
+        Ok(())
     }
 
-    fn on_configure_request(&mut self, req: ConfigureRequestEvent) -> Result<HandleResult> {
+    fn on_configure_request(&mut self, req: ConfigureRequestEvent) -> Result<()> {
         if let Some(win) = self.window_mut(req.window) {
-            return win.on_configure_request(req);
+            win.on_configure_request(req)?;
         }
-        Ok(HandleResult::Ignored)
+        Ok(())
     }
 
-    fn on_configure_notify(&mut self, notif: ConfigureNotifyEvent) -> Result<HandleResult> {
-        if !notif.override_redirect {
-            if let Some(win) = self.window_mut(notif.window) {
-                return win.on_configure_notify(notif);
-            }
+    fn on_configure_notify(&mut self, notif: ConfigureNotifyEvent) -> Result<()> {
+        if notif.override_redirect {
+            return Ok(());
         }
-        Ok(HandleResult::Ignored)
+
+        if let Some(win) = self.window_mut(notif.window) {
+            win.on_configure_notify(notif)?;
+        }
+        Ok(())
     }
 
-    fn on_expose(&mut self, ev: ExposeEvent) -> Result<HandleResult> {
+    fn on_expose(&mut self, ev: ExposeEvent) -> Result<()> {
         if let Some(screen) = self.container_of_mut(ev.window) {
-            return screen.on_expose(ev);
+            screen.on_expose(ev)?;
         }
-        Ok(HandleResult::Ignored)
+        Ok(())
     }
 
-    fn on_focus_in(&mut self, focus_in: FocusInEvent) -> Result<HandleResult> {
-        if focus_in.event == self.ctx.root {
-            if focus_in.detail == NotifyDetail::POINTER_ROOT
-                || focus_in.detail == NotifyDetail::NONE
-            {
-                // Focus the first monitor
-                let screen = self.screen_mut_by_mon(0);
-                screen.focus_any()?;
-            }
-            return Ok(HandleResult::Consumed);
+    fn on_focus_in(&mut self, focus_in: FocusInEvent) -> Result<()> {
+        if focus_in.event == self.ctx.root
+            && (focus_in.detail == NotifyDetail::POINTER_ROOT
+                || focus_in.detail == NotifyDetail::NONE)
+        {
+            // Focus the first monitor
+            let screen = self.screen_mut_by_mon(0);
+            screen.focus_any()?;
         }
-
-        Ok(HandleResult::Ignored)
+        Ok(())
     }
 
-    fn on_randr_notify(&mut self, notif: randr::NotifyEvent) -> Result<HandleResult> {
+    fn on_randr_notify(&mut self, notif: randr::NotifyEvent) -> Result<()> {
         match notif.sub_code {
             randr::Notify::CRTC_CHANGE => {
                 debug!("CRTC_CHANGE: {:?}", notif.u.as_cc());
@@ -728,6 +722,6 @@ impl EventHandlerMethods for WinMan {
             }
             _ => {}
         }
-        Ok(HandleResult::Consumed)
+        Ok(())
     }
 }

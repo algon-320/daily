@@ -4,7 +4,7 @@ use x11rb::protocol::xproto::{Window as Wid, *};
 
 use crate::context::Context;
 use crate::error::Result;
-use crate::event::{EventHandlerMethods, HandleResult};
+use crate::event::EventHandlerMethods;
 
 fn frame_window(ctx: &Context, wid: Wid) -> Result<Wid> {
     use x11rb::connection::Connection as _;
@@ -223,31 +223,31 @@ impl Window {
 }
 
 impl EventHandlerMethods for Window {
-    fn on_map_request(&mut self, req: MapRequestEvent) -> Result<HandleResult> {
+    fn on_map_request(&mut self, req: MapRequestEvent) -> Result<()> {
         if !self.contains(req.window) {
-            return Ok(HandleResult::Ignored);
+            return Ok(());
         }
 
         self.map()?;
-        Ok(HandleResult::Consumed)
+        Ok(())
     }
 
-    fn on_map_notify(&mut self, notif: MapNotifyEvent) -> Result<HandleResult> {
+    fn on_map_notify(&mut self, notif: MapNotifyEvent) -> Result<()> {
         if !self.contains(notif.window) {
-            return Ok(HandleResult::Ignored);
+            return Ok(());
         }
-        Ok(HandleResult::Consumed)
+        Ok(())
     }
 
-    fn on_unmap_notify(&mut self, notif: UnmapNotifyEvent) -> Result<HandleResult> {
+    fn on_unmap_notify(&mut self, notif: UnmapNotifyEvent) -> Result<()> {
         if !self.contains(notif.window) {
-            return Ok(HandleResult::Ignored);
+            return Ok(());
         }
 
         // Ignore the event if it is caused by us.
         if self.ignore_unmap > 0 {
             self.ignore_unmap -= 1;
-            return Ok(HandleResult::Consumed);
+            return Ok(());
         }
 
         // For unmap events caused by another client, we have to do the following:
@@ -255,22 +255,22 @@ impl EventHandlerMethods for Window {
         // - unmap the frame window if it exists
         self.unmap()?;
 
-        Ok(HandleResult::Consumed)
+        Ok(())
     }
 
-    fn on_configure_request(&mut self, req: ConfigureRequestEvent) -> Result<HandleResult> {
+    fn on_configure_request(&mut self, req: ConfigureRequestEvent) -> Result<()> {
         if !self.contains(req.window) {
-            return Ok(HandleResult::Ignored);
+            return Ok(());
         }
 
         let aux = ConfigureWindowAux::from_configure_request(&req);
         self.ctx.conn.configure_window(req.window, &aux)?;
-        Ok(HandleResult::Consumed)
+        Ok(())
     }
 
-    fn on_configure_notify(&mut self, notif: ConfigureNotifyEvent) -> Result<HandleResult> {
+    fn on_configure_notify(&mut self, notif: ConfigureNotifyEvent) -> Result<()> {
         if !self.contains(notif.window) {
-            return Ok(HandleResult::Ignored);
+            return Ok(());
         }
 
         if Some(notif.window) == self.frame {
@@ -282,7 +282,7 @@ impl EventHandlerMethods for Window {
                 .height((notif.height - 16) as u32);
             self.ctx.conn.configure_window(self.inner, &aux)?;
         }
-        Ok(HandleResult::Consumed)
+        Ok(())
     }
 }
 
