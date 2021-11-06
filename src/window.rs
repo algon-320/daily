@@ -39,7 +39,7 @@ pub enum WindowState {
     Hidden,
 }
 
-#[derive(Clone)]
+#[derive()]
 pub struct Window {
     ctx: Context,
     frame: Option<Wid>,
