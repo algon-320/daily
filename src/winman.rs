@@ -238,12 +238,23 @@ impl WinMan {
         screen.window_mut(wid)
     }
 
+    fn screen_mut_by_mon(&mut self, mon_id: usize) -> &mut Screen {
+        self.find_screen_mut(|screen| {
+            if let Some(mon) = screen.monitor() {
+                mon.id == mon_id
+            } else {
+                false
+            }
+        })
+        .expect("Monitor lost")
+    }
+
     fn focused_screen_mut(&mut self) -> Result<&mut Screen> {
         let mut id = None;
         if let Some(wid) = self.ctx.get_focused_window()? {
             id = self.container_of_mut(wid).map(|sc| sc.id);
         };
-        let id = id.unwrap_or(0);
+        let id = id.unwrap_or_else(|| self.screen_mut_by_mon(0).id);
         Ok(&mut self.screens[id])
     }
 
@@ -338,9 +349,7 @@ impl WinMan {
     }
 
     fn focus_monitor(&mut self, mon_id: usize) -> Result<()> {
-        let screen = self
-            .find_screen_mut(|screen| screen.monitor().map(|mon| mon.id) == Some(mon_id))
-            .expect("Monitor lost");
+        let screen = self.screen_mut_by_mon(mon_id);
         screen.focus_any()?;
         self.focus_changed()?;
         Ok(())
@@ -552,15 +561,7 @@ impl EventHandlerMethods for WinMan {
                 || focus_in.detail == NotifyDetail::NONE
             {
                 // Focus the first monitor
-                let screen = self
-                    .find_screen_mut(|screen| {
-                        if let Some(mon) = screen.monitor() {
-                            mon.id == 0
-                        } else {
-                            false
-                        }
-                    })
-                    .expect("Monitor lost");
+                let screen = self.screen_mut_by_mon(0);
                 screen.focus_any()?;
             }
             return Ok(HandleResult::Consumed);
