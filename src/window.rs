@@ -355,10 +355,6 @@ impl Drop for Window {
         if let Ok(void) = self.ctx.conn.reparent_window(self.inner, root, 0, 0) {
             let _ = void.check();
         }
-
-        if let Ok(void) = self.ctx.conn.destroy_window(self.frame) {
-            void.ignore_error();
-        }
     }
 }
 
