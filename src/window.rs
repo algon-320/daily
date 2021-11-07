@@ -11,8 +11,9 @@ fn frame_window(ctx: &Context, wid: Wid) -> Result<Wid> {
 
     let geo = ctx.conn.get_geometry(wid)?.reply()?;
     let frame = ctx.conn.generate_id()?;
-    let aux = CreateWindowAux::new()
-        .event_mask(EventMask::SUBSTRUCTURE_NOTIFY | EventMask::SUBSTRUCTURE_REDIRECT);
+    let mask =
+        EventMask::SUBSTRUCTURE_NOTIFY | EventMask::SUBSTRUCTURE_REDIRECT | EventMask::EXPOSURE;
+    let aux = CreateWindowAux::new().event_mask(mask);
     ctx.conn.create_window(
         x11rb::COPY_DEPTH_FROM_PARENT,
         frame,
@@ -47,6 +48,7 @@ pub struct Window {
     state: WindowState,
     ignore_unmap: usize,
     float_geometry: Option<Rectangle>,
+    highlighted: bool,
 }
 
 impl Window {
@@ -63,6 +65,7 @@ impl Window {
             state,
             ignore_unmap: 0,
             float_geometry: None,
+            highlighted: false,
         })
     }
 
@@ -82,6 +85,7 @@ impl Window {
             state,
             ignore_unmap: 0,
             float_geometry: None,
+            highlighted: false,
         })
     }
 
@@ -186,38 +190,47 @@ impl Window {
         self.ctx.focus_window(self.inner)
     }
 
-    fn paint_background(&mut self, gc: Gcontext) -> Result<()> {
-        if let Some(frame) = self.frame {
-            let rect = Rectangle {
-                x: 0,
-                y: 0,
-                width: 10000,
-                height: 16,
+    fn draw_frame(&mut self) -> Result<()> {
+        let frame = match self.frame {
+            Some(f) => f,
+            None => return Ok(()),
+        };
+
+        let gc = if self.highlighted {
+            self.ctx.color_focused
+        } else {
+            self.ctx.color_regular
+        };
+
+        let rect = Rectangle {
+            x: 0,
+            y: 0,
+            width: 10000,
+            height: 16,
+        };
+        self.ctx.conn.poly_fill_rectangle(frame, gc, &[rect])?;
+        Ok(())
+    }
+
+    fn update_ornament(&mut self) -> Result<()> {
+        if self.frame.is_some() {
+            self.draw_frame()?;
+        } else {
+            let border = self.ctx.config.border;
+            let color = if self.highlighted {
+                border.color_focused
+            } else {
+                border.color_regular
             };
-            self.ctx.conn.poly_fill_rectangle(frame, gc, &[rect])?;
-        }
-        Ok(())
-    }
-
-    pub fn highlight(&mut self) -> Result<()> {
-        if self.frame.is_some() {
-            self.paint_background(self.ctx.color_focused)?;
-        } else {
-            let color = self.ctx.config.border.color_focused;
             let aux = ChangeWindowAttributesAux::new().border_pixel(color);
             self.ctx.conn.change_window_attributes(self.inner, &aux)?;
         }
         Ok(())
     }
 
-    pub fn clear_highlight(&mut self) -> Result<()> {
-        if self.frame.is_some() {
-            self.paint_background(self.ctx.color_regular)?;
-        } else {
-            let color = self.ctx.config.border.color_regular;
-            let aux = ChangeWindowAttributesAux::new().border_pixel(color);
-            self.ctx.conn.change_window_attributes(self.inner, &aux)?;
-        }
+    pub fn set_highlight(&mut self, highlight: bool) -> Result<()> {
+        self.highlighted = highlight;
+        self.update_ornament()?;
         Ok(())
     }
 }
@@ -281,6 +294,15 @@ impl EventHandlerMethods for Window {
                 .width(notif.width as u32)
                 .height((notif.height - 16) as u32);
             self.ctx.conn.configure_window(self.inner, &aux)?;
+        }
+        Ok(())
+    }
+
+    fn on_expose(&mut self, ev: ExposeEvent) -> Result<()> {
+        if let Some(frame) = self.frame {
+            if frame == ev.window {
+                self.draw_frame()?;
+            }
         }
         Ok(())
     }

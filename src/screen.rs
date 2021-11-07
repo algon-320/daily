@@ -447,11 +447,8 @@ impl Screen {
                     continue;
                 }
 
-                if win.contains(focused) {
-                    win.highlight()?;
-                } else {
-                    win.clear_highlight()?;
-                }
+                let highlight = win.contains(focused);
+                win.set_highlight(highlight)?;
             }
         }
 
@@ -540,8 +537,14 @@ impl Screen {
 }
 
 impl EventHandlerMethods for Screen {
-    fn on_expose(&mut self, _ev: ExposeEvent) -> Result<()> {
-        self.draw_bar()?;
+    fn on_expose(&mut self, ev: ExposeEvent) -> Result<()> {
+        let wid = ev.window;
+        assert!(self.contains(wid));
+        if self.bar.contains(wid) {
+            self.draw_bar()?;
+        } else if let Some(win) = self.window_mut(wid) {
+            win.on_expose(ev)?;
+        }
         Ok(())
     }
 }
