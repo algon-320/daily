@@ -38,7 +38,11 @@ fn get_mut_pair<T>(slice: &mut [T], a: usize, b: usize) -> (&mut T, &mut T) {
 }
 
 fn spawn_process(cmd: &str) -> Result<()> {
-    let _ = std::process::Command::new("sh").arg("-c").arg(cmd).spawn();
+    let mut cmd = cmd.to_owned();
+    cmd.push_str(" &");
+    if let Ok(mut sh) = std::process::Command::new("sh").arg("-c").arg(cmd).spawn() {
+        let _ = sh.wait();
+    }
     Ok(())
 }
 
