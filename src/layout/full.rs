@@ -56,7 +56,7 @@ impl Layout for FullScreen {
             } else {
                 base_conf
             };
-            self.ctx.conn.configure_window(win.id(), &conf)?;
+            self.ctx.conn.configure_window(win.frame(), &conf)?;
         }
 
         Ok(())

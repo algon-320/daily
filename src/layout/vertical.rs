@@ -41,7 +41,7 @@ impl Layout for Vertical {
         let mut y = 0;
 
         for win in windows.iter() {
-            let wid = win.id();
+            let wid = win.frame();
 
             let border_conf = self.ctx.config.border;
             let border_width = if border_visible { border_conf.width } else { 0 };

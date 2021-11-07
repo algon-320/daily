@@ -414,7 +414,7 @@ impl WinMan {
                     if let Some(screen) = self.container_of_mut(wid) {
                         if !screen.background().contains(wid) && !screen.bar().contains(wid) {
                             let win = screen.window_mut(wid).unwrap();
-                            win.sink();
+                            win.sink()?;
                             self.refresh_layout()?;
                         }
                     }
@@ -505,7 +505,7 @@ impl EventHandlerMethods for WinMan {
                 .check()?;
 
             let win = unwrap_or_return!(self.window_mut(e.child));
-            let wid = win.id();
+            let wid = win.frame();
             let geo = self.ctx.conn.get_geometry(wid)?.reply()?;
 
             let screen = unwrap_or_return!(self.container_of_mut(wid));

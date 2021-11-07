@@ -85,9 +85,9 @@ pub struct Screen {
 impl std::fmt::Debug for Screen {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if f.alternate() {
-            write!(f, "Screen {{ id: {}, monitor: {:#?}, wins: {:#?}, background: {}, layout: {}, border_visible: {} }}", self.id, self.monitor, self.wins, self.background.id(), self.layouts[self.current_layout].name(), self.border_visible)
+            write!(f, "Screen {{ id: {}, monitor: {:#?}, wins: {:#?}, background: {}, layout: {}, border_visible: {} }}", self.id, self.monitor, self.wins, self.background.inner(), self.layouts[self.current_layout].name(), self.border_visible)
         } else {
-            write!(f, "Screen {{ id: {}, monitor: {:?}, wins: {:?}, background: {}, layout: {}, border_visible: {} }}", self.id, self.monitor, self.wins, self.background.id(), self.layouts[self.current_layout].name(), self.border_visible)
+            write!(f, "Screen {{ id: {}, monitor: {:?}, wins: {:?}, background: {}, layout: {}, border_visible: {} }}", self.id, self.monitor, self.wins, self.background.inner(), self.layouts[self.current_layout].name(), self.border_visible)
         }
     }
 }
@@ -98,8 +98,7 @@ impl Screen {
             let wid = ctx.conn.generate_id()?;
             let aux = CreateWindowAux::new()
                 .background_pixel(ctx.config.background_color)
-                .event_mask(EventMask::FOCUS_CHANGE)
-                .override_redirect(1); // special window
+                .event_mask(EventMask::FOCUS_CHANGE);
             ctx.conn.create_window(
                 x11rb::COPY_DEPTH_FROM_PARENT,
                 wid,
@@ -120,8 +119,7 @@ impl Screen {
             let wid = ctx.conn.generate_id()?;
             let aux = CreateWindowAux::new()
                 .background_pixel(0x4e4b61)
-                .event_mask(EventMask::EXPOSURE)
-                .override_redirect(1); // special window
+                .event_mask(EventMask::EXPOSURE);
             ctx.conn.create_window(
                 x11rb::COPY_DEPTH_FROM_PARENT,
                 wid,
@@ -139,16 +137,16 @@ impl Screen {
         };
 
         let bar_gc = {
-            let font = ctx.conn.generate_id()?;
-            ctx.conn.open_font(font, b"*")?.check()?;
+            // let font = ctx.conn.generate_id()?;
+            // ctx.conn.open_font(font, b"fixed")?.check()?;
 
             let gc = ctx.conn.generate_id()?;
             let aux = CreateGCAux::new()
-                .font(font)
+                // .font(font)
                 .background(0x4e4b61)
                 .foreground(0xd2ca9c);
-            ctx.conn.create_gc(gc, bar.id(), &aux)?;
-            ctx.conn.close_font(font)?;
+            ctx.conn.create_gc(gc, bar.inner(), &aux)?;
+            // ctx.conn.close_font(font)?;
             gc
         };
 
@@ -190,7 +188,7 @@ impl Screen {
         debug!(
             "screen.attach: id={}, background={}, monitor={:?}, wins={:?}",
             self.id,
-            self.background.id(),
+            self.background.inner(),
             monitor,
             self.wins
         );
@@ -219,7 +217,7 @@ impl Screen {
         debug!(
             "screen.detach: id={}, background={}, monitor={:?}, wins={:?}",
             self.id,
-            self.background.id(),
+            self.background.inner(),
             self.monitor,
             self.wins
         );
@@ -237,7 +235,7 @@ impl Screen {
     }
 
     pub fn update_background(&mut self) -> Result<()> {
-        let mon = self.monitor.as_ref().unwrap();
+        let mon = self.monitor.as_ref().expect("monitor is not attached");
 
         let aux = ConfigureWindowAux::new()
             .x(mon.info.x as i32)
@@ -245,7 +243,7 @@ impl Screen {
             .width(mon.info.width as u32)
             .height(mon.info.height as u32)
             .stack_mode(StackMode::BELOW);
-        let id = self.background.id();
+        let id = self.background.frame();
         self.ctx.conn.configure_window(id, &aux)?;
 
         let aux = ConfigureWindowAux::new()
@@ -253,9 +251,9 @@ impl Screen {
             .y(mon.info.y as i32)
             .width(mon.info.width as u32)
             .height(16)
-            .sibling(self.background.id())
+            .sibling(self.background.frame())
             .stack_mode(StackMode::ABOVE);
-        let id = self.bar.id();
+        let id = self.bar.frame();
         self.ctx.conn.configure_window(id, &aux)?;
 
         self.draw_bar()?;
@@ -264,10 +262,12 @@ impl Screen {
     }
 
     fn draw_bar(&mut self) -> Result<()> {
+        debug!("screen.draw_bar: id={}", self.id);
+
         let mon = self.monitor.as_ref().unwrap();
         let w = mon.info.width as i16;
 
-        let bar = self.bar.id();
+        let bar = self.bar.inner();
         let gc = self.bar_gc;
 
         let color_bg = 0x4e4b61;
@@ -348,7 +348,7 @@ impl Screen {
     }
 
     pub fn add_window(&mut self, mut win: Window) -> Result<()> {
-        if self.wins.contains_key(&win.id()) {
+        if self.wins.contains_key(&win.frame()) {
             return Ok(());
         }
 
@@ -358,7 +358,7 @@ impl Screen {
             win.hide()?;
         }
 
-        self.wins.insert(win.id(), win);
+        self.wins.insert(win.frame(), win);
         self.refresh_layout()?;
         Ok(())
     }
@@ -373,7 +373,7 @@ impl Screen {
             }
         }
 
-        let wid = self.window_mut(wid).expect("unknown window").id();
+        let wid = self.window_mut(wid).expect("unknown window").frame();
         let win = self.wins.remove(&wid).expect("unknown window");
 
         if need_focus_change {
@@ -405,7 +405,7 @@ impl Screen {
                 .values()
                 .filter(|win| win.is_mapped() && !win.is_floating())
                 .collect();
-            wins.sort_unstable_by_key(|w| w.id());
+            wins.sort_unstable_by_key(|w| w.frame());
 
             let mut mon_info = mon.info.clone();
 
@@ -433,7 +433,7 @@ impl Screen {
                     .y((mon.info.y + geo.y) as i32)
                     .width(geo.width as u32)
                     .height(geo.height as u32);
-                self.ctx.conn.configure_window(win.id(), &aux)?;
+                self.ctx.conn.configure_window(win.frame(), &aux)?;
             }
         }
 
@@ -510,7 +510,7 @@ impl Screen {
             return self.focus_any();
         }
 
-        let old = self.window_mut(old).unwrap().id();
+        let old = self.window_mut(old).unwrap().frame();
 
         let next = self
             .wins
