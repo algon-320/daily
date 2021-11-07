@@ -258,6 +258,8 @@ impl EventHandlerMethods for Window {
         }
 
         // Ignore the event if it is caused by us.
+        // FIXME: This kind of filtering should be done by checking the sequence number
+        //        corresponding to the causing request.
         if self.ignore_unmap > 0 {
             self.ignore_unmap -= 1;
             return Ok(());

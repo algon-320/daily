@@ -396,43 +396,45 @@ impl Screen {
 
         debug!("screen.refresh_layout: id={}", self.id);
 
-        let mut wins: Vec<&Window> = self
-            .wins
-            .values()
-            .filter(|win| win.is_mapped() && !win.is_floating())
-            .collect();
-        wins.sort_unstable_by_key(|w| w.id());
-
         let mon = self.monitor.as_ref().unwrap();
-        let mut mon_info = mon.info.clone();
 
-        // make a space for the bar
-        mon_info.y += 16;
-        mon_info.height -= 16;
+        // for normal mapped windows
+        {
+            let mut wins: Vec<&Window> = self
+                .wins
+                .values()
+                .filter(|win| win.is_mapped() && !win.is_floating())
+                .collect();
+            wins.sort_unstable_by_key(|w| w.id());
 
-        let layout = &mut self.layouts[self.current_layout];
+            let mut mon_info = mon.info.clone();
 
-        // revert it
-        if layout.name() == "full-screen" {
-            mon_info.y -= 16;
-            mon_info.height += 16;
+            let layout = &mut self.layouts[self.current_layout];
+
+            // make a space for the bar
+            if layout.name() != "full-screen" {
+                mon_info.y += 16;
+                mon_info.height -= 16;
+            }
+
+            layout.layout(&mon_info, &wins, self.border_visible)?;
         }
 
-        layout.layout(&mon_info, &wins, self.border_visible)?;
-
-        // floating windows
-        for win in self
-            .wins
-            .values()
-            .filter(|win| win.is_mapped() && win.is_floating())
+        // for floating windows
         {
-            let geo = win.get_float_geometry().unwrap();
-            let aux = ConfigureWindowAux::new()
-                .x((mon.info.x + geo.x) as i32)
-                .y((mon.info.y + geo.y) as i32)
-                .width(geo.width as u32)
-                .height(geo.height as u32);
-            self.ctx.conn.configure_window(win.id(), &aux)?;
+            for win in self
+                .wins
+                .values()
+                .filter(|win| win.is_mapped() && win.is_floating())
+            {
+                let geo = win.get_float_geometry().unwrap();
+                let aux = ConfigureWindowAux::new()
+                    .x((mon.info.x + geo.x) as i32)
+                    .y((mon.info.y + geo.y) as i32)
+                    .width(geo.width as u32)
+                    .height(geo.height as u32);
+                self.ctx.conn.configure_window(win.id(), &aux)?;
+            }
         }
 
         // update highlight
