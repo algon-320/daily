@@ -81,16 +81,3 @@ impl ContextInner {
         Ok(if is_window(focus) { Some(focus) } else { None })
     }
 }
-
-impl Drop for ContextInner {
-    fn drop(&mut self) {
-        debug!("ContextInner drop");
-
-        if let Ok(void) = self.conn.free_gc(self.color_focused) {
-            void.ignore_error();
-        }
-        if let Ok(void) = self.conn.free_gc(self.color_regular) {
-            void.ignore_error();
-        }
-    }
-}
