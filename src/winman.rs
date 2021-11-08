@@ -178,7 +178,7 @@ impl WinMan {
 
         // Get currently existing windows
         let preexist = self.ctx.conn.query_tree(self.ctx.root)?.reply()?.children;
-        info!("preexist windows = {:?}", &preexist);
+        info!("preexist windows = {:08X?}", &preexist);
 
         // Setup monitors
         self.setup_monitor()?;
@@ -359,7 +359,7 @@ impl WinMan {
                     return Ok(());
                 }
 
-                debug!("move_window_to_screen: wid = {}", wid);
+                debug!("move_window_to_screen: wid = {:08X}", wid);
 
                 let win = src.forget_window(wid)?;
                 src.focus_any()?;

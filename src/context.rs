@@ -44,17 +44,17 @@ impl ContextInner {
         // Get a root window on the first screen.
         let screen = conn.setup().roots.get(0).ok_or(Error::NoScreen)?;
         let root = screen.root;
-        debug!("root = {}", root);
+        debug!("root = {:08X}", root);
 
         let color_focused = conn.generate_id()?;
         let aux = CreateGCAux::new().foreground(config.border.color_focused);
         conn.create_gc(color_focused, root, &aux)?;
-        debug!("color_focused gc = {}", color_focused);
+        debug!("color_focused gc = {:08X}", color_focused);
 
         let color_regular = conn.generate_id()?;
         let aux = CreateGCAux::new().foreground(config.border.color_regular);
         conn.create_gc(color_regular, root, &aux)?;
-        debug!("color_regular gc = {}", color_regular);
+        debug!("color_regular gc = {:08X}", color_regular);
 
         Ok(Self {
             conn,
@@ -66,7 +66,7 @@ impl ContextInner {
     }
 
     pub fn focus_window(&self, win: Wid) -> Result<()> {
-        debug!("set_input_focus --> {}", win);
+        debug!("set_input_focus --> {:08X}", win);
         self.conn
             .set_input_focus(InputFocus::POINTER_ROOT, win, x11rb::CURRENT_TIME)?;
         Ok(())

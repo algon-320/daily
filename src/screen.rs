@@ -85,9 +85,9 @@ pub struct Screen {
 impl std::fmt::Debug for Screen {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if f.alternate() {
-            write!(f, "Screen {{ id: {}, monitor: {:#?}, wins: {:#?}, background: {}, layout: {}, border_visible: {} }}", self.id, self.monitor, self.wins, self.background.inner(), self.layouts[self.current_layout].name(), self.border_visible)
+            write!(f, "Screen {{ id: {}, monitor: {:#?}, wins: {:#?}, background: {:#?}, layout: {}, border_visible: {} }}", self.id, self.monitor, self.wins, self.background, self.layouts[self.current_layout].name(), self.border_visible)
         } else {
-            write!(f, "Screen {{ id: {}, monitor: {:?}, wins: {:?}, background: {}, layout: {}, border_visible: {} }}", self.id, self.monitor, self.wins, self.background.inner(), self.layouts[self.current_layout].name(), self.border_visible)
+            write!(f, "Screen {{ id: {}, monitor: {:?}, wins: {:?}, background: {:?}, layout: {}, border_visible: {} }}", self.id, self.monitor, self.wins, self.background, self.layouts[self.current_layout].name(), self.border_visible)
         }
     }
 }
@@ -186,11 +186,8 @@ impl Screen {
 
     pub fn attach(&mut self, monitor: Monitor) -> Result<()> {
         debug!(
-            "screen.attach: id={}, background={}, monitor={:?}, wins={:?}",
-            self.id,
-            self.background.inner(),
-            monitor,
-            self.wins
+            "screen.attach: id={}, background={:?}, monitor={:?}, wins={:?}",
+            self.id, self.background, monitor, self.wins
         );
 
         self.monitor = Some(monitor);
@@ -215,11 +212,8 @@ impl Screen {
         }
 
         debug!(
-            "screen.detach: id={}, background={}, monitor={:?}, wins={:?}",
-            self.id,
-            self.background.inner(),
-            self.monitor,
-            self.wins
+            "screen.detach: id={}, background={:?}, monitor={:?}, wins={:?}",
+            self.id, self.background, self.monitor, self.wins
         );
 
         self.background.unmap()?;
@@ -364,7 +358,7 @@ impl Screen {
     }
 
     pub fn forget_window(&mut self, wid: Wid) -> Result<Window> {
-        debug!("screen.forget_window: id={}, wid={}", self.id, wid);
+        debug!("screen.forget_window: id={}, wid={:08X}", self.id, wid);
 
         let mut need_focus_change = false;
         if let Some(focused) = self.ctx.get_focused_window()? {
