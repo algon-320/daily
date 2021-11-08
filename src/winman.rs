@@ -402,7 +402,7 @@ impl WinMan {
                 if let Some(wid) = self.ctx.get_focused_window()? {
                     if let Some(screen) = self.container_of_mut(wid) {
                         if !screen.background().contains(wid) && !screen.bar().contains(wid) {
-                            let _ = screen.forget_window(wid);
+                            screen.forget_window(wid)?.close();
                             self.refresh_layout()?;
                         }
                     }

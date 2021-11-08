@@ -251,6 +251,12 @@ impl Window {
         self.update_ornament()?;
         Ok(())
     }
+
+    pub fn close(self) {
+        if let Ok(void) = self.ctx.conn.destroy_window(self.inner) {
+            let _ = void.check();
+        }
+    }
 }
 
 impl EventHandlerMethods for Window {
@@ -353,6 +359,10 @@ impl Drop for Window {
 
         let root = self.ctx.root;
         if let Ok(void) = self.ctx.conn.reparent_window(self.inner, root, 0, 0) {
+            let _ = void.check();
+        }
+
+        if let Ok(void) = self.ctx.conn.destroy_window(self.frame) {
             let _ = void.check();
         }
     }
