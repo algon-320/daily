@@ -691,6 +691,12 @@ impl EventHandlerMethods for WinMan {
         Ok(())
     }
 
+    fn on_client_message(&mut self, ev: ClientMessageEvent) -> Result<()> {
+        let name = self.ctx.conn.get_atom_name(ev.type_)?.reply()?.name;
+        debug!("atom = {:?}", String::from_utf8(name));
+        Ok(())
+    }
+
     fn on_randr_notify(&mut self, notif: randr::NotifyEvent) -> Result<()> {
         match notif.sub_code {
             randr::Notify::CRTC_CHANGE => {

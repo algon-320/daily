@@ -32,6 +32,7 @@ pub trait EventHandlerMethods {
     event_handler_ignore!(on_expose, ExposeEvent);
     event_handler_ignore!(on_focus_in, FocusInEvent);
     event_handler_ignore!(on_focus_out, FocusInEvent);
+    event_handler_ignore!(on_client_message, ClientMessageEvent);
     event_handler_ignore!(on_randr_notify, randr::NotifyEvent);
 }
 
@@ -54,6 +55,7 @@ impl<T: EventHandlerMethods> EventHandler for T {
             Event::Expose(e) => self.on_expose(e),
             Event::FocusIn(e) => self.on_focus_in(e),
             Event::FocusOut(e) => self.on_focus_out(e),
+            Event::ClientMessage(e) => self.on_client_message(e),
             Event::RandrNotify(e) => self.on_randr_notify(e),
             e => {
                 warn!("unhandled event: {:?}", e);
