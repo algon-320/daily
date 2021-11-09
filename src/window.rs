@@ -29,6 +29,15 @@ fn frame_window(ctx: &Context, wid: Wid) -> Result<Wid> {
             x11rb::COPY_FROM_PARENT,
             &aux,
         )?;
+
+        // WM_STATE
+        let wm_state = ctx.conn.intern_atom(false, b"WM_STATE")?.reply()?.atom;
+        let mut data = Vec::new();
+        data.extend_from_slice(&1u32.to_ne_bytes());
+        data.extend_from_slice(&x11rb::NONE.to_ne_bytes());
+        ctx.conn
+            .change_property(PropMode::REPLACE, wid, wm_state, wm_state, 32, 2, &data)?;
+
         frame
     };
     ctx.conn.reparent_window(wid, frame, 0, 0)?;
