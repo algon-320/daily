@@ -333,6 +333,13 @@ impl EventHandlerMethods for Window {
         }
 
         if notif.window == self.frame {
+            // Ensure delivery of ConfigureNotify at the following `configure_window`
+            // NOTE: Because ConfigureWindow request which doesn't change the current configuration
+            //       will not generate any ConfigureNotify on the window,
+            //       we make a extra request here to ensure that.
+            let aux = ConfigureWindowAux::new().x(1);
+            self.ctx.conn.configure_window(self.inner, &aux)?;
+
             let aux = if self.frame_visible {
                 let height = 16;
                 ConfigureWindowAux::new()
