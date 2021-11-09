@@ -198,7 +198,8 @@ impl WinMan {
                 WindowState::Unmapped
             };
 
-            let win = Window::new(self.ctx.clone(), wid, state)?;
+            let border_width = self.ctx.config.border.width;
+            let win = Window::new(self.ctx.clone(), wid, state, border_width)?;
             first.add_window(win)?;
         }
 
@@ -608,7 +609,13 @@ impl EventHandlerMethods for WinMan {
             return Ok(());
         }
 
-        let win = Window::new(self.ctx.clone(), notif.window, WindowState::Created)?;
+        let border_width = self.ctx.config.border.width;
+        let win = Window::new(
+            self.ctx.clone(),
+            notif.window,
+            WindowState::Created,
+            border_width,
+        )?;
 
         let screen = self.focused_screen_mut()?;
         screen.add_window(win)?;

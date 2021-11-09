@@ -6,7 +6,7 @@ use crate::context::Context;
 use crate::error::Result;
 use crate::event::EventHandlerMethods;
 
-fn frame_window(ctx: &Context, wid: Wid) -> Result<Wid> {
+fn frame_window(ctx: &Context, wid: Wid, border_width: u32) -> Result<Wid> {
     use x11rb::connection::Connection as _;
 
     let geo = ctx.conn.get_geometry(wid)?.reply()?;
@@ -24,7 +24,7 @@ fn frame_window(ctx: &Context, wid: Wid) -> Result<Wid> {
             geo.y,
             geo.width,
             geo.height,
-            ctx.config.border.width as u16,
+            border_width as u16,
             WindowClass::INPUT_OUTPUT,
             x11rb::COPY_FROM_PARENT,
             &aux,
@@ -62,11 +62,12 @@ pub struct Window {
     float_geometry: Option<Rectangle>,
     frame_visible: bool,
     highlighted: bool,
+    border_width: u32,
 }
 
 impl Window {
-    pub fn new(ctx: Context, inner: Wid, state: WindowState) -> Result<Self> {
-        let frame = frame_window(&ctx, inner)?;
+    pub fn new(ctx: Context, inner: Wid, state: WindowState, border_width: u32) -> Result<Self> {
+        let frame = frame_window(&ctx, inner, border_width)?;
 
         let mut ignore_unmap = 0;
         if state == WindowState::Mapped {
@@ -86,6 +87,7 @@ impl Window {
             float_geometry: None,
             frame_visible: false,
             highlighted: false,
+            border_width,
         })
     }
 
@@ -101,7 +103,7 @@ impl Window {
             .border_width(0);
         self.ctx.conn.configure_window(self.inner, &aux)?;
 
-        let aux = ConfigureWindowAux::new().border_width(1);
+        let aux = ConfigureWindowAux::new().border_width(self.border_width as u32);
         self.ctx.conn.configure_window(self.frame, &aux)?;
 
         self.frame_visible = true;
@@ -118,7 +120,7 @@ impl Window {
         let aux = ConfigureWindowAux::new().x(0).y(0).border_width(0);
         self.ctx.conn.configure_window(self.inner, &aux)?;
 
-        let aux = ConfigureWindowAux::new().border_width(self.ctx.config.border.width);
+        let aux = ConfigureWindowAux::new().border_width(self.border_width as u32);
         self.ctx.conn.configure_window(self.frame, &aux)?;
 
         self.frame_visible = false;
@@ -306,7 +308,7 @@ impl EventHandlerMethods for Window {
 
         assert!(req.window == self.inner);
 
-        let aux = ConfigureWindowAux::from_configure_request(&req);
+        let aux = ConfigureWindowAux::new().border_width(req.border_width as u32);
         self.ctx.conn.configure_window(self.frame, &aux)?;
 
         let aux = if self.frame_visible {

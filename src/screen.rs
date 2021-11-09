@@ -112,7 +112,7 @@ impl Screen {
                 x11rb::COPY_FROM_PARENT,
                 &aux,
             )?;
-            Window::new(ctx.clone(), wid, WindowState::Unmapped)?
+            Window::new(ctx.clone(), wid, WindowState::Unmapped, 0)?
         };
 
         let bar = {
@@ -133,7 +133,7 @@ impl Screen {
                 x11rb::COPY_FROM_PARENT,
                 &aux,
             )?;
-            Window::new(ctx.clone(), wid, WindowState::Unmapped)?
+            Window::new(ctx.clone(), wid, WindowState::Unmapped, 0)?
         };
 
         let bar_gc = {
