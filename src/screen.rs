@@ -228,6 +228,13 @@ impl Screen {
         Ok(self.monitor.take())
     }
 
+    pub fn swap_monitors(a: &mut Self, b: &mut Self) -> Result<()> {
+        std::mem::swap(&mut a.monitor, &mut b.monitor);
+        a.update_background()?;
+        b.update_background()?;
+        Ok(())
+    }
+
     pub fn update_background(&mut self) -> Result<()> {
         let mon = self.monitor.as_ref().expect("monitor is not attached");
 
@@ -258,7 +265,7 @@ impl Screen {
     fn draw_bar(&mut self) -> Result<()> {
         debug!("screen.draw_bar: id={}", self.id);
 
-        let mon = self.monitor.as_ref().unwrap();
+        let mon = self.monitor.as_ref().expect("monitor is not attached");
         let w = mon.info.width as i16;
 
         let bar = self.bar.inner();
@@ -500,7 +507,7 @@ impl Screen {
             .get_focused_window()?
             .unwrap_or_else(|| InputFocus::NONE.into());
 
-        if !self.contains(old) || self.background.contains(old) {
+        if !self.contains(old) || self.background.contains(old) || self.bar.contains(old) {
             return self.focus_any();
         }
 
@@ -534,6 +541,10 @@ impl Screen {
 
 impl EventHandlerMethods for Screen {
     fn on_expose(&mut self, ev: ExposeEvent) -> Result<()> {
+        if self.monitor.is_none() {
+            return Ok(());
+        }
+
         let wid = ev.window;
         assert!(self.contains(wid));
         if self.bar.contains(wid) {

@@ -326,19 +326,9 @@ impl WinMan {
                 return Ok(());
             }
 
-            // HACK:
-            //   Avoid generation of FocusIn event with detail=PointerRoot/None
-            //   between a detach and the following attach.
-            self.ctx.focus_window(self.ctx.root)?;
-
             // perfom swap
             let (screen_a, screen_b) = get_mut_pair(&mut self.screens, a, b);
-            let mon_a = screen_a.detach()?.expect("focus inconsistent");
-            let mon_b = screen_b.detach()?.expect("focus inconsistent");
-
-            screen_a.attach(mon_b)?;
-            screen_b.attach(mon_a)?;
-
+            Screen::swap_monitors(screen_a, screen_b)?;
             screen_b.focus_any()?;
         }
 
