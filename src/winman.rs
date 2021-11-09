@@ -692,8 +692,12 @@ impl EventHandlerMethods for WinMan {
     }
 
     fn on_client_message(&mut self, ev: ClientMessageEvent) -> Result<()> {
-        let name = self.ctx.conn.get_atom_name(ev.type_)?.reply()?.name;
-        debug!("atom = {:?}", String::from_utf8(name));
+        if ev.window == self.ctx.root {
+            return Ok(());
+        }
+
+        let win = unwrap_or_return!(self.window_mut(ev.window));
+        win.on_client_message(ev)?;
         Ok(())
     }
 
