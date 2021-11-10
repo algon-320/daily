@@ -1,6 +1,7 @@
 use log::debug;
 use std::rc::Rc;
 
+use crate::atom::AtomCollection;
 use crate::config::Config;
 use crate::error::{Error, Result};
 
@@ -23,6 +24,7 @@ pub struct ContextInner {
     pub conn: RustConnection,
     pub config: Config,
     pub root: Wid,
+    pub atom: AtomCollection,
 }
 
 impl ContextInner {
@@ -42,7 +44,14 @@ impl ContextInner {
         let root = screen.root;
         debug!("root = {:08X}", root);
 
-        Ok(Self { conn, config, root })
+        let atom = AtomCollection::new(&conn)?.reply()?;
+
+        Ok(Self {
+            conn,
+            config,
+            root,
+            atom,
+        })
     }
 
     pub fn focus_window(&self, win: Wid) -> Result<()> {

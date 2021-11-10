@@ -6,44 +6,6 @@ use crate::context::Context;
 use crate::error::Result;
 use crate::event::EventHandlerMethods;
 
-fn frame_window(ctx: &Context, wid: Wid, border_width: u32) -> Result<Wid> {
-    use x11rb::connection::Connection as _;
-
-    let geo = ctx.conn.get_geometry(wid)?.reply()?;
-
-    let frame = {
-        let frame = ctx.conn.generate_id()?;
-        let mask =
-            EventMask::SUBSTRUCTURE_NOTIFY | EventMask::SUBSTRUCTURE_REDIRECT | EventMask::EXPOSURE;
-        let aux = CreateWindowAux::new().event_mask(mask);
-        ctx.conn.create_window(
-            x11rb::COPY_DEPTH_FROM_PARENT,
-            frame,
-            ctx.root,
-            geo.x,
-            geo.y,
-            geo.width,
-            geo.height,
-            border_width as u16,
-            WindowClass::INPUT_OUTPUT,
-            x11rb::COPY_FROM_PARENT,
-            &aux,
-        )?;
-
-        // WM_STATE
-        let wm_state = ctx.conn.intern_atom(false, b"WM_STATE")?.reply()?.atom;
-        let mut data = Vec::new();
-        data.extend_from_slice(&1u32.to_ne_bytes());
-        data.extend_from_slice(&x11rb::NONE.to_ne_bytes());
-        ctx.conn
-            .change_property(PropMode::REPLACE, wid, wm_state, wm_state, 32, 2, &data)?;
-
-        frame
-    };
-    ctx.conn.reparent_window(wid, frame, 0, 0)?;
-    Ok(frame)
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum WindowState {
     Created,
@@ -68,7 +30,41 @@ pub struct Window {
 
 impl Window {
     pub fn new(ctx: Context, inner: Wid, state: WindowState, border_width: u32) -> Result<Self> {
-        let frame = frame_window(&ctx, inner, border_width)?;
+        use x11rb::connection::Connection as _;
+
+        let geo = ctx.conn.get_geometry(inner)?.reply()?;
+        let frame = {
+            let frame = ctx.conn.generate_id()?;
+            let mask = EventMask::SUBSTRUCTURE_NOTIFY
+                | EventMask::SUBSTRUCTURE_REDIRECT
+                | EventMask::EXPOSURE;
+            let aux = CreateWindowAux::new().event_mask(mask);
+            ctx.conn.create_window(
+                x11rb::COPY_DEPTH_FROM_PARENT,
+                frame,
+                ctx.root,
+                geo.x,
+                geo.y,
+                geo.width,
+                geo.height,
+                border_width as u16,
+                WindowClass::INPUT_OUTPUT,
+                x11rb::COPY_FROM_PARENT,
+                &aux,
+            )?;
+
+            // WM_STATE
+            let wm_state = ctx.atom.WM_STATE;
+            let mut data = Vec::new();
+            data.extend_from_slice(&1u32.to_ne_bytes());
+            data.extend_from_slice(&x11rb::NONE.to_ne_bytes());
+            ctx.conn
+                .change_property(PropMode::REPLACE, inner, wm_state, wm_state, 32, 2, &data)?;
+
+            ctx.conn.reparent_window(inner, frame, 0, 0)?;
+
+            frame
+        };
 
         let mut ignore_unmap = 0;
         if state == WindowState::Mapped {
@@ -79,7 +75,6 @@ impl Window {
             ctx.conn.map_window(inner)?;
         }
 
-        use x11rb::connection::Connection as _;
         let gc = ctx.conn.generate_id()?;
         {
             let font = ctx.conn.generate_id()?;

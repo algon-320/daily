@@ -1,3 +1,4 @@
+mod atom;
 mod config;
 mod context;
 mod error;
