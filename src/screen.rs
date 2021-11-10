@@ -1,5 +1,5 @@
 use log::debug;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{Window as Wid, *};
@@ -77,17 +77,16 @@ pub struct Screen {
     background: Window, // background window
     bar: Window,        // the status bar window
     bar_gc: Gcontext,   // used for drawings on the bar
-    layouts: Vec<Box<dyn Layout>>,
-    current_layout: usize,
+    layouts: VecDeque<Box<dyn Layout>>,
     border_visible: bool,
 }
 
 impl std::fmt::Debug for Screen {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if f.alternate() {
-            write!(f, "Screen {{ id: {}, monitor: {:#?}, wins: {:#?}, background: {:#?}, layout: {}, border_visible: {} }}", self.id, self.monitor, self.wins, self.background, self.layouts[self.current_layout].name(), self.border_visible)
+            write!(f, "Screen {{ id: {}, monitor: {:#?}, wins: {:#?}, background: {:#?}, layout: {}, border_visible: {} }}", self.id, self.monitor, self.wins, self.background, self.layouts.front().unwrap().name(), self.border_visible)
         } else {
-            write!(f, "Screen {{ id: {}, monitor: {:?}, wins: {:?}, background: {:?}, layout: {}, border_visible: {} }}", self.id, self.monitor, self.wins, self.background, self.layouts[self.current_layout].name(), self.border_visible)
+            write!(f, "Screen {{ id: {}, monitor: {:?}, wins: {:?}, background: {:?}, layout: {}, border_visible: {} }}", self.id, self.monitor, self.wins, self.background, self.layouts.front().unwrap().name(), self.border_visible)
         }
     }
 }
@@ -150,25 +149,24 @@ impl Screen {
             gc
         };
 
-        let mut layouts: Vec<Box<dyn Layout>> = Vec::new();
+        let mut layouts: VecDeque<Box<dyn Layout>> = VecDeque::new();
 
         // let horizontal = layout::Horizontal::new(ctx.clone());
-        // layouts.push(Box::new(horizontal));
+        // layouts.push_back(Box::new(horizontal));
 
         let horizontal = layout::HorizontalWithBorder::new(ctx.clone());
-        layouts.push(Box::new(horizontal));
+        layouts.push_back(Box::new(horizontal));
 
         // let vertical = layout::Vertical::new(ctx.clone());
-        // layouts.push(Box::new(vertical));
+        // layouts.push_back(Box::new(vertical));
 
         let vertical = layout::VerticalWithBorder::new(ctx.clone());
-        layouts.push(Box::new(vertical));
+        layouts.push_back(Box::new(vertical));
 
         let full = layout::FullScreen::new(ctx.clone());
-        layouts.push(Box::new(full));
+        layouts.push_back(Box::new(full));
 
         assert!(!layouts.is_empty());
-        let current_layout = 0;
 
         Ok(Self {
             ctx,
@@ -179,7 +177,6 @@ impl Screen {
             bar,
             bar_gc,
             layouts,
-            current_layout,
             border_visible: false,
         })
     }
@@ -381,7 +378,7 @@ impl Screen {
     }
 
     pub fn next_layout(&mut self) -> Result<()> {
-        self.current_layout = (self.current_layout + 1) % self.layouts.len();
+        self.layouts.rotate_left(1);
         self.refresh_layout()
     }
 
@@ -405,7 +402,7 @@ impl Screen {
 
             let mut mon_info = mon.info.clone();
 
-            let layout = &mut self.layouts[self.current_layout];
+            let layout = self.layouts.front_mut().expect("no layout");
 
             // make a space for the bar
             if layout.name() != "full-screen" {
