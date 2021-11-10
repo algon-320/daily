@@ -29,11 +29,11 @@ use std::convert::TryInto;
 //      Right = 114,
 
 const DEFAULT_CONFIG: &str = r###"
-background_color: '#148231'
+background_color: '#343255'
 border:
     width: 1
-    color_focused: '#FF8882'
-    color_regular: '#505050'
+    color_focused: '#00f080'
+    color_regular: '#00003e'
 
 keybind:
     - { action: Press,   mod: [Super],        key: 33,  command: {Spawn: /usr/bin/dmenu_run} }
