@@ -453,6 +453,13 @@ impl WinMan {
         }
         Ok(())
     }
+
+    pub fn alarm(&mut self) -> Result<()> {
+        for screen in self.screens.iter_mut() {
+            screen.alarm()?;
+        }
+        Ok(())
+    }
 }
 
 macro_rules! unwrap_or_return {

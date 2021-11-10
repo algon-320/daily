@@ -1,5 +1,5 @@
 use log::debug;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::atom::AtomCollection;
 use crate::config::Config;
@@ -9,14 +9,14 @@ use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{ConnectionExt as _, InputFocus, Window as Wid};
 use x11rb::rust_connection::RustConnection;
 
-pub type Context = Rc<ContextInner>;
+pub type Context = Arc<ContextInner>;
 
 pub fn init<S>(display_name: S) -> Result<Context>
 where
     S: Into<Option<&'static str>>,
 {
     let inner = ContextInner::new(display_name)?;
-    Ok(Rc::new(inner))
+    Ok(Arc::new(inner))
 }
 
 #[derive(Debug)]

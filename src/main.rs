@@ -45,14 +45,65 @@ where
     use x11rb::connection::Connection;
 
     let ctx = context::init(display_name)?;
+
     let mut wm = winman::WinMan::new(ctx.clone())?;
     ctx.conn.flush()?;
 
-    loop {
-        let x11_event = ctx.conn.wait_for_event()?;
-        wm.handle_event(x11_event)?;
-        ctx.conn.flush()?;
+    enum DailyEvent {
+        X11(x11rb::protocol::Event),
+        Error(x11rb::errors::ConnectionError),
+        Alarm,
     }
+    let (event_tx, event_rx) = std::sync::mpsc::channel::<DailyEvent>();
+
+    // a thread to generate alarm events periodically.
+    {
+        use std::time::Duration;
+        const PERIOD: Duration = Duration::from_secs(10);
+
+        let event_tx = event_tx.clone();
+        std::thread::spawn(move || loop {
+            std::thread::sleep(PERIOD);
+            let res = event_tx.send(DailyEvent::Alarm);
+            if res.is_err() {
+                return;
+            }
+        });
+    }
+
+    // a thread to consume X11 events.
+    {
+        let ctx = ctx.clone();
+        std::thread::spawn(move || loop {
+            let daily_event = match ctx.conn.wait_for_event() {
+                Ok(ev) => DailyEvent::X11(ev),
+                Err(err) => DailyEvent::Error(err),
+            };
+            let res = event_tx.send(daily_event);
+            if res.is_err() {
+                return;
+            }
+        });
+    }
+
+    // main thread: processes events gathered from the others.
+    while let Ok(ev) = event_rx.recv() {
+        match ev {
+            DailyEvent::X11(ev) => {
+                wm.handle_event(ev)?;
+                ctx.conn.flush()?;
+            }
+            DailyEvent::Alarm => {
+                wm.alarm()?;
+                ctx.conn.flush()?;
+            }
+            DailyEvent::Error(e) => {
+                return Err(e.into());
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn main() {

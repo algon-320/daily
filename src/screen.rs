@@ -528,6 +528,14 @@ impl Screen {
     pub fn hide_border(&mut self) {
         self.border_visible = false;
     }
+
+    pub fn alarm(&mut self) -> Result<()> {
+        if self.monitor.is_none() {
+            return Ok(());
+        }
+        self.draw_bar()?;
+        Ok(())
+    }
 }
 
 impl EventHandlerMethods for Screen {
