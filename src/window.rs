@@ -63,6 +63,7 @@ pub struct Window {
     frame_visible: bool,
     highlighted: bool,
     border_width: u32,
+    gc: Gcontext,
 }
 
 impl Window {
@@ -78,6 +79,18 @@ impl Window {
             ctx.conn.map_window(inner)?;
         }
 
+        use x11rb::connection::Connection as _;
+        let gc = ctx.conn.generate_id()?;
+        {
+            let font = ctx.conn.generate_id()?;
+            ctx.conn.open_font(font, b"fixed")?.check()?;
+
+            let aux = CreateGCAux::new().font(font);
+            ctx.conn.create_gc(gc, frame, &aux)?;
+
+            ctx.conn.close_font(font)?;
+        }
+
         Ok(Self {
             ctx,
             frame,
@@ -88,6 +101,7 @@ impl Window {
             frame_visible: false,
             highlighted: false,
             border_width,
+            gc,
         })
     }
 
@@ -225,19 +239,53 @@ impl Window {
     }
 
     fn draw_frame(&mut self) -> Result<()> {
-        let gc = if self.highlighted {
-            self.ctx.color_focused
-        } else {
-            self.ctx.color_regular
-        };
+        let conn = &self.ctx.conn;
 
-        let rect = Rectangle {
-            x: 0,
-            y: 0,
-            width: 10000,
-            height: 16,
+        // Fetch window info
+        let geo = conn.get_geometry(self.frame)?.reply()?;
+        let reply = self
+            .ctx
+            .conn
+            .get_property(
+                false,
+                self.inner,
+                AtomEnum::WM_NAME,
+                AtomEnum::STRING,
+                0,
+                std::u32::MAX,
+            )?
+            .reply();
+        let win_name = reply
+            .map(|reply| reply.value)
+            .unwrap_or_else(|_| b"(unknown)".to_vec());
+        let win_name = String::from_utf8_lossy(&win_name);
+
+        // Clear
+        let color = if self.highlighted {
+            self.ctx.config.border.color_focused
+        } else {
+            self.ctx.config.border.color_regular
         };
-        self.ctx.conn.poly_fill_rectangle(self.frame, gc, &[rect])?;
+        let aux = ChangeGCAux::new().foreground(color).background(color);
+        conn.change_gc(self.gc, &aux)?;
+        conn.poly_fill_rectangle(
+            self.frame,
+            self.gc,
+            &[Rectangle {
+                x: 0,
+                y: 0,
+                width: geo.width,
+                height: 16,
+            }],
+        )?;
+
+        // Window ID and name
+        let title = format!("0x{:07X} -- {}", self.inner, win_name);
+        let title = title.as_bytes();
+        let aux = ChangeGCAux::new().foreground(0xFFFFFF);
+        conn.change_gc(self.gc, &aux)?;
+        conn.image_text8(self.frame, self.gc, 4, 13, title)?;
+
         Ok(())
     }
 
