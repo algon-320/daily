@@ -197,10 +197,7 @@ impl Screen {
         self.bar.map()?;
 
         for win in self.wins.values_mut() {
-            let state = win.state();
-            if state == WindowState::Mapped || state == WindowState::Hidden {
-                win.map()?;
-            }
+            win.show()?;
         }
 
         Ok(())
@@ -220,9 +217,7 @@ impl Screen {
         self.bar.unmap()?;
 
         for w in self.wins.values_mut() {
-            if w.is_mapped() {
-                w.hide()?;
-            }
+            w.hide()?;
         }
 
         Ok(self.monitor.take())
@@ -487,11 +482,7 @@ impl Screen {
 
     pub fn focus_any(&mut self) -> Result<()> {
         debug!("screen {}: focus_any", self.id);
-        match self
-            .wins
-            .values_mut()
-            .find(|win| win.state() == WindowState::Mapped || win.state() == WindowState::Hidden)
-        {
+        match self.wins.values_mut().find(|win| win.is_mapped()) {
             Some(first) => first.focus(),
             None => {
                 debug!("screen {}: focus background", self.id);

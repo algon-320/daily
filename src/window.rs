@@ -11,7 +11,6 @@ pub enum WindowState {
     Created,
     Mapped,
     Unmapped,
-    Hidden,
 }
 
 #[derive()]
@@ -20,6 +19,7 @@ pub struct Window {
     frame: Wid,
     inner: Wid,
     state: WindowState,
+    hidden: bool,
     ignore_unmap: usize,
     float_geometry: Option<Rectangle>,
     frame_visible: bool,
@@ -32,6 +32,7 @@ impl Window {
     pub fn new(ctx: Context, inner: Wid, state: WindowState, border_width: u32) -> Result<Self> {
         use x11rb::connection::Connection as _;
 
+        // Reparent
         let geo = ctx.conn.get_geometry(inner)?.reply()?;
         let frame = {
             let frame = ctx.conn.generate_id()?;
@@ -91,6 +92,7 @@ impl Window {
             frame,
             inner,
             state,
+            hidden: false,
             ignore_unmap,
             float_geometry: None,
             frame_visible: false,
@@ -98,6 +100,122 @@ impl Window {
             border_width,
             gc,
         })
+    }
+
+    pub fn is_mapped(&self) -> bool {
+        self.state == WindowState::Mapped
+    }
+
+    pub fn is_viewable(&self) -> bool {
+        !self.hidden && self.state == WindowState::Mapped
+    }
+
+    pub fn frame(&self) -> Wid {
+        self.frame
+    }
+
+    pub fn inner(&self) -> Wid {
+        self.inner
+    }
+
+    pub fn contains(&self, wid: Wid) -> bool {
+        self.inner == wid || self.frame == wid
+    }
+
+    pub fn is_floating(&self) -> bool {
+        self.float_geometry.is_some()
+    }
+
+    pub fn set_float_geometry(&mut self, rect: Rectangle) {
+        assert!(self.is_floating());
+        self.float_geometry = Some(rect);
+    }
+    pub fn get_float_geometry(&self) -> Option<Rectangle> {
+        self.float_geometry
+    }
+
+    fn try_unmap(&mut self) -> Result<()> {
+        let wid = self.frame;
+        if let Ok(attr) = self.ctx.conn.get_window_attributes(wid)?.reply() {
+            if attr.map_state != MapState::UNMAPPED {
+                self.ctx.conn.unmap_window(wid)?;
+                self.ignore_unmap += 1;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn map(&mut self) -> Result<()> {
+        if !self.hidden {
+            self.ctx.conn.map_window(self.frame)?;
+            self.ctx.conn.map_window(self.inner)?;
+        }
+
+        // Focus this window if it's a newly mapped one
+        if self.state == WindowState::Created {
+            debug!("focus newly mapped window: win={:?}", self);
+            self.focus()?;
+        }
+        self.state = WindowState::Mapped;
+        Ok(())
+    }
+
+    pub fn unmap(&mut self) -> Result<()> {
+        self.state = WindowState::Unmapped;
+        self.try_unmap()?;
+        Ok(())
+    }
+
+    /// Map the window without changing its state.
+    pub fn show(&mut self) -> Result<()> {
+        assert!(self.hidden);
+        self.hidden = false;
+
+        self.ctx.conn.map_window(self.frame)?;
+        Ok(())
+    }
+
+    /// Unmap the window without changing its state.
+    pub fn hide(&mut self) -> Result<()> {
+        assert!(!self.hidden);
+        self.hidden = true;
+
+        self.try_unmap()?;
+        Ok(())
+    }
+
+    pub fn focus(&mut self) -> Result<()> {
+        self.ctx.focus_window(self.inner)
+    }
+
+    pub fn close(self) {
+        if let Ok(void) = self.ctx.conn.destroy_window(self.inner) {
+            let _ = void.check();
+        }
+    }
+
+    pub fn float(&mut self, rect: Rectangle) -> Result<()> {
+        self.add_frame()?;
+
+        // put this window at the top of window stack
+        let aux = ConfigureWindowAux::new().stack_mode(StackMode::ABOVE);
+        self.ctx.conn.configure_window(self.frame, &aux)?;
+
+        self.float_geometry = Some(rect);
+        Ok(())
+    }
+
+    pub fn sink(&mut self) -> Result<()> {
+        self.remove_frame()?;
+
+        self.float_geometry = None;
+        Ok(())
+    }
+
+    pub fn set_highlight(&mut self, highlight: bool) -> Result<()> {
+        self.highlighted = highlight;
+        self.update_ornament()?;
+        Ok(())
     }
 
     fn add_frame(&mut self) -> Result<()> {
@@ -135,102 +253,6 @@ impl Window {
         self.frame_visible = false;
         self.update_ornament()?;
         Ok(())
-    }
-
-    pub fn is_mapped(&self) -> bool {
-        self.state == WindowState::Mapped
-    }
-
-    pub fn state(&self) -> WindowState {
-        self.state
-    }
-
-    pub fn frame(&self) -> Wid {
-        self.frame
-    }
-    pub fn inner(&self) -> Wid {
-        self.inner
-    }
-
-    pub fn contains(&self, wid: Wid) -> bool {
-        self.inner == wid || self.frame == wid
-    }
-
-    pub fn float(&mut self, rect: Rectangle) -> Result<()> {
-        self.add_frame()?;
-
-        // put this window at the top of window stack
-        let aux = ConfigureWindowAux::new().stack_mode(StackMode::ABOVE);
-        self.ctx.conn.configure_window(self.frame, &aux)?;
-
-        self.float_geometry = Some(rect);
-        Ok(())
-    }
-    pub fn sink(&mut self) -> Result<()> {
-        self.remove_frame()?;
-
-        self.float_geometry = None;
-        Ok(())
-    }
-    pub fn is_floating(&self) -> bool {
-        self.float_geometry.is_some()
-    }
-
-    pub fn set_float_geometry(&mut self, rect: Rectangle) {
-        assert!(self.is_floating());
-        self.float_geometry = Some(rect);
-    }
-    pub fn get_float_geometry(&self) -> Option<Rectangle> {
-        self.float_geometry
-    }
-
-    pub fn map(&mut self) -> Result<()> {
-        if self.state != WindowState::Mapped {
-            self.ctx.conn.map_window(self.frame)?;
-            self.ctx.conn.map_window(self.inner)?;
-
-            // Newly mapped window
-            if self.state == WindowState::Created {
-                debug!("focus newly mapped window: win={:?}", self);
-                self.focus()?;
-            }
-
-            self.state = WindowState::Mapped;
-        }
-        Ok(())
-    }
-
-    pub fn unmap(&mut self) -> Result<()> {
-        if self.state == WindowState::Mapped {
-            let frame = self.frame;
-            if let Ok(attr) = self.ctx.conn.get_window_attributes(frame)?.reply() {
-                if attr.map_state != MapState::UNMAPPED {
-                    self.ctx.conn.unmap_window(frame)?;
-                    // ignore the next unmap event
-                    self.ignore_unmap += 1;
-                }
-            }
-            self.state = WindowState::Unmapped;
-        }
-        Ok(())
-    }
-
-    pub fn hide(&mut self) -> Result<()> {
-        if self.state != WindowState::Hidden {
-            let wid = self.frame;
-            if let Ok(attr) = self.ctx.conn.get_window_attributes(wid)?.reply() {
-                if attr.map_state != MapState::UNMAPPED {
-                    self.ctx.conn.unmap_window(wid)?;
-                    self.ignore_unmap += 1;
-                }
-            }
-            self.state = WindowState::Hidden;
-        }
-        Ok(())
-    }
-
-    pub fn focus(&mut self) -> Result<()> {
-        self.ctx.focus_window(self.inner)
     }
 
     fn draw_frame(&mut self) -> Result<()> {
@@ -298,18 +320,6 @@ impl Window {
         let aux = ChangeWindowAttributesAux::new().border_pixel(color);
         self.ctx.conn.change_window_attributes(self.frame, &aux)?;
         Ok(())
-    }
-
-    pub fn set_highlight(&mut self, highlight: bool) -> Result<()> {
-        self.highlighted = highlight;
-        self.update_ornament()?;
-        Ok(())
-    }
-
-    pub fn close(self) {
-        if let Ok(void) = self.ctx.conn.destroy_window(self.inner) {
-            let _ = void.check();
-        }
     }
 }
 
@@ -407,7 +417,7 @@ impl EventHandlerMethods for Window {
     }
 
     fn on_expose(&mut self, ev: ExposeEvent) -> Result<()> {
-        if self.frame == ev.window {
+        if self.frame == ev.window && self.is_viewable() {
             self.draw_frame()?;
         }
         Ok(())
