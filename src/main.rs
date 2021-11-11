@@ -35,7 +35,7 @@ pub enum Command {
 }
 
 use error::{Error, Result};
-use log::{error, info};
+use log::{debug, error, info};
 
 pub fn start<S>(display_name: S) -> Result<()>
 where
@@ -90,7 +90,20 @@ where
     while let Ok(ev) = event_rx.recv() {
         match ev {
             DailyEvent::X11(ev) => {
-                wm.handle_event(ev)?;
+                let res = wm.handle_event(ev);
+
+                // Ignore WINDOW errors ...
+                //     because WINDOW errors occur during processing a event
+                //     which was generated on a already destroyed window at the time.
+                use x11rb::protocol::ErrorKind;
+                if let Err(err) = res {
+                    if err.x11_error_kind() == Some(ErrorKind::Window) {
+                        debug!("Ignored WINDOW error: {:?}", err);
+                    } else {
+                        return Err(err);
+                    }
+                }
+
                 ctx.conn.flush()?;
             }
             DailyEvent::Alarm => {

@@ -1,5 +1,6 @@
 use thiserror::Error;
 use x11rb::errors::ReplyOrIdError;
+use x11rb::protocol::ErrorKind;
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -30,6 +31,15 @@ pub enum Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+impl Error {
+    pub fn x11_error_kind(&self) -> Option<ErrorKind> {
+        match self {
+            Error::X11(ReplyOrIdError::X11Error(err)) => Some(err.error_kind),
+            _ => None,
+        }
+    }
+}
 
 impl<T: Into<ReplyOrIdError>> From<T> for Error {
     fn from(x: T) -> Error {
