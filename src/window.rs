@@ -1,4 +1,4 @@
-use log::{debug, warn};
+use log::debug;
 
 use x11rb::protocol::xproto::{Window as Wid, *};
 
@@ -20,7 +20,6 @@ pub struct Window {
     inner: Wid,
     state: WindowState,
     hidden: bool,
-    ignore_unmap: usize,
     float_geometry: Option<Rectangle>,
     frame_visible: bool,
     highlighted: bool,
@@ -39,7 +38,7 @@ impl Window {
             let mask = EventMask::SUBSTRUCTURE_NOTIFY
                 | EventMask::SUBSTRUCTURE_REDIRECT
                 | EventMask::EXPOSURE;
-            let aux = CreateWindowAux::new().event_mask(mask);
+            let aux = CreateWindowAux::new().event_mask(mask).override_redirect(1);
             ctx.conn.create_window(
                 x11rb::COPY_DEPTH_FROM_PARENT,
                 frame,
@@ -67,11 +66,7 @@ impl Window {
             frame
         };
 
-        let mut ignore_unmap = 0;
         if state == WindowState::Mapped {
-            // NOTE: ReparentWindow request automatically unmap `inner`.
-            ignore_unmap += 1;
-
             ctx.conn.map_window(frame)?;
             ctx.conn.map_window(inner)?;
         }
@@ -93,13 +88,18 @@ impl Window {
             inner,
             state,
             hidden: false,
-            ignore_unmap,
             float_geometry: None,
             frame_visible: false,
             highlighted: false,
             border_width,
             gc,
         })
+    }
+
+    pub fn close(self) {
+        if let Ok(void) = self.ctx.conn.destroy_window(self.inner) {
+            let _ = void.check();
+        }
     }
 
     pub fn is_mapped(&self) -> bool {
@@ -112,10 +112,6 @@ impl Window {
 
     pub fn frame(&self) -> Wid {
         self.frame
-    }
-
-    pub fn inner(&self) -> Wid {
-        self.inner
     }
 
     pub fn contains(&self, wid: Wid) -> bool {
@@ -132,17 +128,6 @@ impl Window {
     }
     pub fn get_float_geometry(&self) -> Option<Rectangle> {
         self.float_geometry
-    }
-
-    fn try_unmap(&mut self) -> Result<()> {
-        let wid = self.frame;
-        if let Ok(attr) = self.ctx.conn.get_window_attributes(wid)?.reply() {
-            if attr.map_state != MapState::UNMAPPED {
-                self.ctx.conn.unmap_window(wid)?;
-                self.ignore_unmap += 1;
-            }
-        }
-        Ok(())
     }
 
     pub fn map(&mut self) -> Result<()> {
@@ -162,7 +147,7 @@ impl Window {
 
     pub fn unmap(&mut self) -> Result<()> {
         self.state = WindowState::Unmapped;
-        self.try_unmap()?;
+        self.ctx.conn.unmap_window(self.frame)?;
         Ok(())
     }
 
@@ -170,7 +155,6 @@ impl Window {
     pub fn show(&mut self) -> Result<()> {
         assert!(self.hidden);
         self.hidden = false;
-
         self.ctx.conn.map_window(self.frame)?;
         Ok(())
     }
@@ -179,19 +163,12 @@ impl Window {
     pub fn hide(&mut self) -> Result<()> {
         assert!(!self.hidden);
         self.hidden = true;
-
-        self.try_unmap()?;
+        self.ctx.conn.unmap_window(self.frame)?;
         Ok(())
     }
 
     pub fn focus(&mut self) -> Result<()> {
         self.ctx.focus_window(self.inner)
-    }
-
-    pub fn close(self) {
-        if let Ok(void) = self.ctx.conn.destroy_window(self.inner) {
-            let _ = void.check();
-        }
     }
 
     pub fn float(&mut self, rect: Rectangle) -> Result<()> {
@@ -218,39 +195,56 @@ impl Window {
         Ok(())
     }
 
-    fn add_frame(&mut self) -> Result<()> {
-        if self.frame_visible {
-            warn!("the window is already framed");
-            return Ok(());
-        }
-
-        let aux = ConfigureWindowAux::new()
-            .x(0)
-            .y(16) // FIXME
-            .border_width(0);
-        self.ctx.conn.configure_window(self.inner, &aux)?;
-
-        let aux = ConfigureWindowAux::new().border_width(self.border_width as u32);
+    pub fn configure(&self, aux: &ConfigureWindowAux) -> Result<()> {
+        let bw = aux.border_width.unwrap_or(self.border_width);
+        let aux = aux.border_width(bw);
         self.ctx.conn.configure_window(self.frame, &aux)?;
 
+        // dummy request
+        // Ensure delivery of ConfigureNotify at the following `configure_window`
+        // NOTE: Because ConfigureWindow request which doesn't change the current configuration
+        let dummy_aux = ConfigureWindowAux::new().x(1);
+        self.ctx.conn.configure_window(self.inner, &dummy_aux)?;
+
+        let mut inner_aux = ConfigureWindowAux::new()
+            .x(0)
+            .y(if self.frame_visible { 16 } else { 0 }) // FIXME
+            .border_width(0);
+
+        if let Some(w) = aux.width {
+            inner_aux = inner_aux.width(w);
+        }
+        if let Some(h) = aux.height {
+            let y = inner_aux.y.unwrap();
+            inner_aux = inner_aux.height(h - y as u32);
+        }
+
+        self.ctx.conn.configure_window(self.inner, &inner_aux)?;
+        Ok(())
+    }
+
+    fn add_frame(&mut self) -> Result<()> {
+        if self.frame_visible {
+            return Ok(());
+        }
         self.frame_visible = true;
+
+        let aux = ConfigureWindowAux::new().border_width(self.border_width as u32);
+        self.configure(&aux)?; // configure the inner as well
+
         self.update_ornament()?;
         Ok(())
     }
 
     fn remove_frame(&mut self) -> Result<()> {
         if !self.frame_visible {
-            warn!("the window is not framed");
             return Ok(());
         }
-
-        let aux = ConfigureWindowAux::new().x(0).y(0).border_width(0);
-        self.ctx.conn.configure_window(self.inner, &aux)?;
+        self.frame_visible = false;
 
         let aux = ConfigureWindowAux::new().border_width(self.border_width as u32);
-        self.ctx.conn.configure_window(self.frame, &aux)?;
+        self.configure(&aux)?;
 
-        self.frame_visible = false;
         self.update_ornament()?;
         Ok(())
     }
@@ -338,86 +332,15 @@ impl EventHandlerMethods for Window {
             return Ok(());
         }
 
-        // Ignore the event if it is caused by us.
-        // FIXME: This kind of filtering should be done by checking the sequence number
-        //        corresponding to the causing request.
-        if self.ignore_unmap > 0 {
-            self.ignore_unmap -= 1;
-            return Ok(());
-        }
+        assert!(notif.window == self.inner);
 
-        // For unmap events caused by another client, we have to do the following:
-        // - update the state
-        // - unmap the frame window if it exists
         self.unmap()?;
-
-        Ok(())
-    }
-
-    fn on_configure_request(&mut self, req: ConfigureRequestEvent) -> Result<()> {
-        if !self.contains(req.window) {
-            return Ok(());
-        }
-
-        assert!(req.window == self.inner);
-
-        let aux = ConfigureWindowAux::new().border_width(req.border_width as u32);
-        self.ctx.conn.configure_window(self.frame, &aux)?;
-
-        let aux = if self.frame_visible {
-            let height = 16;
-            ConfigureWindowAux::from_configure_request(&req)
-                .x(0)
-                .y(height as i32)
-                .border_width(0)
-                .height((req.height - height) as u32)
-        } else {
-            ConfigureWindowAux::from_configure_request(&req)
-                .x(0)
-                .y(0)
-                .border_width(0)
-        };
-        self.ctx.conn.configure_window(self.inner, &aux)?;
-
-        Ok(())
-    }
-
-    fn on_configure_notify(&mut self, notif: ConfigureNotifyEvent) -> Result<()> {
-        if !self.contains(notif.window) {
-            return Ok(());
-        }
-
-        if notif.window == self.frame {
-            // Ensure delivery of ConfigureNotify at the following `configure_window`
-            // NOTE: Because ConfigureWindow request which doesn't change the current configuration
-            //       will not generate any ConfigureNotify on the window,
-            //       we make a extra request here to ensure that.
-            let aux = ConfigureWindowAux::new().x(1);
-            self.ctx.conn.configure_window(self.inner, &aux)?;
-
-            let aux = if self.frame_visible {
-                let height = 16;
-                ConfigureWindowAux::new()
-                    .x(0)
-                    .y(height as i32)
-                    .border_width(0)
-                    .width(notif.width as u32)
-                    .height((notif.height - height) as u32)
-            } else {
-                ConfigureWindowAux::new()
-                    .x(0)
-                    .y(0)
-                    .border_width(0)
-                    .width(notif.width as u32)
-                    .height(notif.height as u32)
-            };
-            self.ctx.conn.configure_window(self.inner, &aux)?;
-        }
         Ok(())
     }
 
     fn on_expose(&mut self, ev: ExposeEvent) -> Result<()> {
-        if self.frame == ev.window && self.is_viewable() {
+        assert!(ev.window == self.frame);
+        if self.is_viewable() {
             self.draw_frame()?;
         }
         Ok(())

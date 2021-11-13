@@ -1,6 +1,5 @@
 use crate::error::Result;
 use log::{trace, warn};
-
 use x11rb::protocol::{randr, xproto::*, Event};
 
 pub trait EventHandler {

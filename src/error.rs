@@ -26,6 +26,9 @@ pub enum Error {
     #[error(transparent)]
     X11(ReplyOrIdError),
 
+    #[error("The other side of the stream was already closed.")]
+    BrokenChannel,
+
     #[error("Invalid config: {reason}")]
     InvalidConfig { reason: String },
 }

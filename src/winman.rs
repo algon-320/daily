@@ -10,6 +10,7 @@ use x11rb::protocol::{
 use crate::context::Context;
 use crate::error::{Error, Result};
 use crate::event::EventHandlerMethods;
+use crate::monitor::Monitor;
 use crate::screen::Screen;
 use crate::window::{Window, WindowState};
 use crate::{Command, KeybindAction};
@@ -87,7 +88,7 @@ fn simulate_click<C: Connection>(conn: &C, button: u8, duration_ms: u32) -> Resu
 
 const MAX_SCREENS: usize = 10;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct MouseDrag {
     wid: Wid,
     state: u16,
@@ -97,12 +98,6 @@ struct MouseDrag {
     window_y: i16,
     window_w: u16,
     window_h: u16,
-}
-
-#[derive(Debug)]
-pub struct Monitor {
-    pub id: usize,
-    pub info: randr::MonitorInfo,
 }
 
 #[derive()]
@@ -184,19 +179,18 @@ impl WinMan {
             randr::NotifyMask::OUTPUT_CHANGE | randr::NotifyMask::CRTC_CHANGE,
         )?;
 
-        // Get currently existing windows
-        let preexist = self.ctx.conn.query_tree(self.ctx.root)?.reply()?.children;
-        info!("preexist windows = {:08X?}", &preexist);
-
-        // Setup monitors
+        // Setup screens and attach monitors
         self.setup_monitor()?;
 
-        let first = &mut self.screens[0];
-
         // Put all pre-existing windows on the first screen.
+        let preexist = self.ctx.conn.query_tree(self.ctx.root)?.reply()?.children;
+        info!("preexist windows = {:08X?}", &preexist);
+        let first = &mut self.screens[0];
         for &wid in preexist.iter() {
             let attr = self.ctx.conn.get_window_attributes(wid)?.reply()?;
-            if attr.class == WindowClass::INPUT_ONLY {
+
+            // Ignore uninteresting windows
+            if attr.override_redirect || attr.class == WindowClass::INPUT_ONLY {
                 continue;
             }
 
@@ -220,12 +214,14 @@ impl WinMan {
 
         self.refresh_layout()?;
 
+        self.ctx.conn.flush()?;
         Ok(())
     }
 
     fn setup_monitor(&mut self) -> Result<()> {
         self.ctx.focus_window(self.ctx.root)?; // HACK
 
+        // Request monitor info
         let monitors_reply = self
             .ctx
             .conn
@@ -233,10 +229,12 @@ impl WinMan {
             .reply()?;
         self.monitor_num = monitors_reply.monitors.len();
 
+        // Detach all monitors
         for screen in self.screens.iter_mut() {
-            let _ = screen.detach()?;
+            let _old = screen.detach()?;
         }
 
+        // Fill self.screens
         let max_num = std::cmp::max(self.monitor_num, MAX_SCREENS);
         while self.screens.len() < max_num {
             let id = self.screens.len();
@@ -244,10 +242,12 @@ impl WinMan {
             self.screens.push(screen);
         }
 
+        // Attach monitors
         for (id, info) in monitors_reply.monitors.into_iter().enumerate() {
-            let screen = &mut self.screens[id];
-            screen.attach(Monitor { id, info })?;
+            let new = Monitor::new(&self.ctx, id, info);
+            self.screens[id].attach(new)?;
         }
+
         Ok(())
     }
 
@@ -354,7 +354,7 @@ impl WinMan {
         let focus = self.ctx.get_focused_window()?;
         if let Some(wid) = focus {
             if let Some(src) = self.container_of_mut(wid) {
-                if src.background().contains(wid) || src.bar().contains(wid) {
+                if src.background().contains(wid) {
                     return Ok(());
                 }
 
@@ -400,7 +400,7 @@ impl WinMan {
             Command::Close => {
                 if let Some(wid) = self.ctx.get_focused_window()? {
                     if let Some(screen) = self.container_of_mut(wid) {
-                        if !screen.background().contains(wid) && !screen.bar().contains(wid) {
+                        if !screen.background().contains(wid) {
                             screen.forget_window(wid)?.close();
                             self.refresh_layout()?;
                         }
@@ -411,7 +411,7 @@ impl WinMan {
             Command::Sink => {
                 if let Some(wid) = self.ctx.get_focused_window()? {
                     if let Some(screen) = self.container_of_mut(wid) {
-                        if !screen.background().contains(wid) && !screen.bar().contains(wid) {
+                        if !screen.background().contains(wid) {
                             let win = screen.window_mut(wid).unwrap();
                             win.sink()?;
                             self.refresh_layout()?;
@@ -503,14 +503,25 @@ impl EventHandlerMethods for WinMan {
     }
 
     fn on_button_press(&mut self, e: ButtonPressEvent) -> Result<()> {
+        // Focus the window just clicked.
+        if let Some(win) = self.window_mut(e.child) {
+            win.focus()?;
+            self.focus_changed()?;
+        }
+
         if e.state & u16::from(ModMask::M1) > 0 {
             // button + Alt
+
             self.ctx
                 .conn
-                .allow_events(Allow::SYNC_POINTER, x11rb::CURRENT_TIME)?
-                .check()?;
+                .allow_events(Allow::SYNC_POINTER, x11rb::CURRENT_TIME)?;
 
-            let win = unwrap_or_return!(self.window_mut(e.child));
+            let owner = unwrap_or_return!(self.container_of_mut(e.child));
+            if owner.background().contains(e.child) {
+                return Ok(());
+            }
+
+            let win = unwrap_or_return!(owner.window_mut(e.child));
             let wid = win.frame();
             let geo = self.ctx.conn.get_geometry(wid)?.reply()?;
 
@@ -542,19 +553,13 @@ impl EventHandlerMethods for WinMan {
             });
 
             self.refresh_layout()?;
+            Ok(())
         } else {
             self.ctx
                 .conn
-                .allow_events(Allow::REPLAY_POINTER, x11rb::CURRENT_TIME)?
-                .check()?;
-
-            let win = self.window_mut(e.child);
-            if e.child != x11rb::NONE && win.is_some() {
-                win.unwrap().focus()?;
-                self.focus_changed()?;
-            }
+                .allow_events(Allow::REPLAY_POINTER, x11rb::CURRENT_TIME)?;
+            Ok(())
         }
-        Ok(())
     }
 
     fn on_motion_notify(&mut self, e: MotionNotifyEvent) -> Result<()> {
@@ -565,16 +570,17 @@ impl EventHandlerMethods for WinMan {
             return Ok(());
         }
 
-        let drag = unwrap_or_return!(self.drag.as_ref());
+        let drag = unwrap_or_return!(self.drag.clone());
         let dx = e.root_x - drag.start_x;
         let dy = e.root_y - drag.start_y;
 
+        let win = unwrap_or_return!(self.window_mut(drag.wid));
         if e.state & left_mask > 0 {
             // Left button
             let aux = ConfigureWindowAux::new()
                 .x((drag.window_x + dx) as i32)
                 .y((drag.window_y + dy) as i32);
-            self.ctx.conn.configure_window(drag.wid, &aux)?;
+            win.configure(&aux)?;
         } else if e.state & right_mask > 0 {
             // Right button
             let w = drag.window_w as i32 + dx as i32;
@@ -583,7 +589,7 @@ impl EventHandlerMethods for WinMan {
             let h = std::cmp::max(h, 1);
 
             let aux = ConfigureWindowAux::new().width(w as u32).height(h as u32);
-            self.ctx.conn.configure_window(drag.wid, &aux)?;
+            win.configure(&aux)?;
         }
         Ok(())
     }
@@ -605,42 +611,33 @@ impl EventHandlerMethods for WinMan {
             width: geo.width,
             height: geo.height,
         });
+
+        // TODO: move the ownership of the window to appropriate screen
+
         self.refresh_layout()?;
 
         Ok(())
     }
 
-    fn on_create_notify(&mut self, notif: CreateNotifyEvent) -> Result<()> {
-        if notif.override_redirect {
-            return Ok(());
-        }
-
-        let attr = self.ctx.conn.get_window_attributes(notif.window)?.reply()?;
-        if attr.class == WindowClass::INPUT_ONLY {
-            return Ok(());
-        }
-
-        if self.container_of_mut(notif.window).is_some() {
-            return Ok(());
-        }
-
-        let border_width = self.ctx.config.border.width;
-        let win = Window::new(
-            self.ctx.clone(),
-            notif.window,
-            WindowState::Created,
-            border_width,
-        )?;
-
-        let screen = self.focused_screen_mut()?;
-        screen.add_window(win)?;
-        Ok(())
-    }
-
     fn on_map_request(&mut self, req: MapRequestEvent) -> Result<()> {
-        let win = unwrap_or_return!(self.window_mut(req.window));
-        win.on_map_request(req)?;
-        self.focus_changed()?;
+        if req.parent == self.ctx.root {
+            let wid = req.window;
+            let attr = self.ctx.conn.get_window_attributes(wid)?.reply()?;
+            if attr.class == WindowClass::INPUT_ONLY {
+                return Ok(());
+            }
+
+            let screen_id = self.focused_screen_mut()?.id;
+
+            let border_width = self.ctx.config.border.width;
+            let mut win = Window::new(self.ctx.clone(), wid, WindowState::Created, border_width)?;
+            win.map()?;
+
+            self.screens[screen_id].add_window(win)?;
+        } else {
+            let win = unwrap_or_return!(self.window_mut(req.parent));
+            win.on_map_request(req)?;
+        }
         Ok(())
     }
 
@@ -649,14 +646,14 @@ impl EventHandlerMethods for WinMan {
             return Ok(());
         }
 
-        let win = unwrap_or_return!(self.window_mut(notif.window));
+        let win = unwrap_or_return!(self.window_mut(notif.event));
         win.on_map_notify(notif)?;
         self.focus_changed()?;
         Ok(())
     }
 
     fn on_unmap_notify(&mut self, notif: UnmapNotifyEvent) -> Result<()> {
-        let win = unwrap_or_return!(self.window_mut(notif.window));
+        let win = unwrap_or_return!(self.window_mut(notif.event));
         win.on_unmap_notify(notif)?;
         self.focus_changed()?;
         Ok(())
@@ -670,7 +667,7 @@ impl EventHandlerMethods for WinMan {
     }
 
     fn on_configure_request(&mut self, req: ConfigureRequestEvent) -> Result<()> {
-        let win = unwrap_or_return!(self.window_mut(req.window));
+        let win = unwrap_or_return!(self.window_mut(req.parent));
         win.on_configure_request(req)?;
         Ok(())
     }
@@ -680,7 +677,7 @@ impl EventHandlerMethods for WinMan {
             return Ok(());
         }
 
-        let win = unwrap_or_return!(self.window_mut(notif.window));
+        let win = unwrap_or_return!(self.window_mut(notif.event));
         win.on_configure_notify(notif)?;
         Ok(())
     }

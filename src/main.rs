@@ -1,12 +1,26 @@
 mod atom;
+mod bar;
 mod config;
 mod context;
 mod error;
 mod event;
 mod layout;
+mod monitor;
 mod screen;
 mod window;
 mod winman;
+
+/// A wrapper for `std::thread::spawn` to give a name to the thread.
+pub fn spawn_named_thread<F, T>(name: String, body: F) -> std::thread::JoinHandle<T>
+where
+    F: FnOnce() -> T + Send + 'static,
+    T: Send + 'static,
+{
+    std::thread::Builder::new()
+        .name(name)
+        .spawn(body)
+        .expect("failed to spawn thread")
+}
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, serde::Deserialize)]
 pub enum KeybindAction {
@@ -45,9 +59,8 @@ where
     use x11rb::connection::Connection;
 
     let ctx = context::init(display_name)?;
-
     let mut wm = winman::WinMan::new(ctx.clone())?;
-    ctx.conn.flush()?;
+    debug!("WinMan initialized");
 
     enum DailyEvent {
         X11(x11rb::protocol::Event),
@@ -62,7 +75,7 @@ where
         const PERIOD: Duration = Duration::from_secs(10);
 
         let event_tx = event_tx.clone();
-        std::thread::spawn(move || loop {
+        spawn_named_thread("main-timer".to_owned(), move || loop {
             std::thread::sleep(PERIOD);
             let res = event_tx.send(DailyEvent::Alarm);
             if res.is_err() {
@@ -74,7 +87,7 @@ where
     // a thread to consume X11 events.
     {
         let ctx = ctx.clone();
-        std::thread::spawn(move || loop {
+        spawn_named_thread("main-x11".to_owned(), move || loop {
             let daily_event = match ctx.conn.wait_for_event() {
                 Ok(ev) => DailyEvent::X11(ev),
                 Err(err) => DailyEvent::Error(err),

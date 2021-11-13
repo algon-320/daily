@@ -24,6 +24,7 @@ pub struct ContextInner {
     pub conn: RustConnection,
     pub config: Config,
     pub root: Wid,
+    pub display: Option<String>,
     pub atom: AtomCollection,
 }
 
@@ -35,7 +36,9 @@ impl ContextInner {
         let config = Config::load()?;
 
         // Connect with the X server
-        let conn = RustConnection::connect(display_name.into())
+        let display_name = display_name.into();
+        let display = display_name.map(str::to_owned);
+        let conn = RustConnection::connect(display_name)
             .map_err(|_| Error::ConnectionFailed)?
             .0;
 
@@ -50,6 +53,7 @@ impl ContextInner {
             conn,
             config,
             root,
+            display,
             atom,
         })
     }

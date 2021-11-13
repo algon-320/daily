@@ -26,7 +26,7 @@ impl Layout for Horizontal {
     fn layout(
         &mut self,
         mon: &MonitorInfo,
-        windows: &[&Window],
+        windows: &[&mut Window],
         border_visible: bool,
     ) -> Result<()> {
         if windows.is_empty() {
@@ -41,8 +41,6 @@ impl Layout for Horizontal {
         let mut x = 0;
 
         for win in windows.iter() {
-            let wid = win.frame();
-
             let border_conf = self.ctx.config.border;
             let border_width = if border_visible { border_conf.width } else { 0 };
 
@@ -52,7 +50,7 @@ impl Layout for Horizontal {
                 .border_width(border_width)
                 .width(w - border_width * 2)
                 .height(h - border_width * 2);
-            self.ctx.conn.configure_window(wid, &conf)?;
+            win.configure(&conf)?;
 
             x += w as i32;
         }
@@ -79,7 +77,7 @@ impl Layout for HorizontalWithBorder {
         "horizontal-with-border"
     }
 
-    fn layout(&mut self, mon: &MonitorInfo, windows: &[&Window], _: bool) -> Result<()> {
+    fn layout(&mut self, mon: &MonitorInfo, windows: &[&mut Window], _: bool) -> Result<()> {
         self.base.layout(mon, windows, true)
     }
 }

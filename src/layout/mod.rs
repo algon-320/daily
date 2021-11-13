@@ -15,7 +15,7 @@ pub trait Layout {
     fn layout(
         &mut self,
         mon: &MonitorInfo,
-        windows: &[&Window],
+        windows: &[&mut Window],
         border_visible: bool,
     ) -> Result<()>;
 
