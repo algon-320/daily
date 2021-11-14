@@ -671,8 +671,13 @@ impl EventHandlerMethods for WinMan {
     }
 
     fn on_configure_request(&mut self, req: ConfigureRequestEvent) -> Result<()> {
-        let win = unwrap_or_return!(self.window_mut(req.parent));
-        win.on_configure_request(req)?;
+        if req.parent == self.ctx.root {
+            let aux = ConfigureWindowAux::from_configure_request(&req);
+            self.ctx.conn.configure_window(req.window, &aux)?;
+        } else {
+            let win = unwrap_or_return!(self.window_mut(req.parent));
+            win.on_configure_request(req)?;
+        }
         Ok(())
     }
 
