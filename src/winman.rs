@@ -622,6 +622,10 @@ impl EventHandlerMethods for WinMan {
     fn on_map_request(&mut self, req: MapRequestEvent) -> Result<()> {
         if req.parent == self.ctx.root {
             let wid = req.window;
+            if self.window_mut(wid).is_some() {
+                return Ok(());
+            }
+
             let attr = self.ctx.conn.get_window_attributes(wid)?.reply()?;
             if attr.class == WindowClass::INPUT_ONLY {
                 return Ok(());
