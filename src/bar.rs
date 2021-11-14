@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
-use log::{debug, error, info};
-use std::sync::mpsc::{channel, Receiver, Sender};
+use crossbeam_channel::{select, tick, unbounded, Receiver, Sender};
+use log::debug;
 use std::sync::Arc;
 
 use x11rb::connection::Connection;
@@ -42,11 +42,15 @@ pub struct BarHandle {
 }
 
 impl BarHandle {
-    pub fn new(ctx: &Context, _id: usize) -> Self {
-        let (req_tx, req_rx) = channel::<Request>();
-        let (resp_tx, resp_rx) = channel::<Response>();
+    pub fn new(ctx: &Context, id: usize) -> Self {
+        let (req_tx, req_rx) = unbounded::<Request>();
+        let (resp_tx, resp_rx) = unbounded::<Response>();
 
-        thread_main(ctx, req_rx, resp_tx);
+        let display = ctx.display.clone();
+        let name = format!("bar-main.{}", id);
+        spawn_named_thread(name, move || {
+            let _ = thread_main(display, req_rx, resp_tx);
+        });
 
         Self {
             tx: req_tx,
@@ -54,10 +58,8 @@ impl BarHandle {
         }
     }
 
-    fn send(&mut self, req: Request) -> Result<()> {
-        self.tx.send(req).map_err(|_| Error::BrokenChannel)
-    }
-    fn recv(&mut self) -> Result<Response> {
+    fn send_recv(&mut self, req: Request) -> Result<Response> {
+        self.tx.send(req).map_err(|_| Error::BrokenChannel)?;
         self.rx.recv().map_err(|_| Error::BrokenChannel)
     }
 
@@ -70,142 +72,84 @@ impl BarHandle {
                 height,
             },
         };
-        self.send(req)?;
-        match self.recv()? {
+        match self.send_recv(req)? {
             Response::Success => Ok(()),
             resp => panic!("Invalid Mesage: {:?}", resp),
         }
     }
 
     pub fn update_content(&mut self, content: Content) -> Result<()> {
-        self.send(Request::UpdateContent { content })?;
-        match self.recv()? {
+        match self.send_recv(Request::UpdateContent { content })? {
             Response::Success => Ok(()),
             resp => panic!("Invalid Mesage: {:?}", resp),
         }
     }
 
     pub fn get_window_id(&mut self) -> Result<Wid> {
-        self.send(Request::GetWindowId)?;
-        match self.recv()? {
+        match self.send_recv(Request::GetWindowId)? {
             Response::WindowId(wid) => Ok(wid),
             resp => panic!("Invalid Mesage: {:?}", resp),
         }
     }
 
-    pub fn show(&mut self) -> Result<()> {
-        self.unit_request(Request::Show)
-    }
-
-    pub fn hide(&mut self) -> Result<()> {
-        self.unit_request(Request::Hide)
-    }
-
     fn unit_request(&mut self, req: Request) -> Result<()> {
-        self.send(req)?;
-        match self.recv()? {
+        match self.send_recv(req)? {
             Response::Success => Ok(()),
             resp => panic!("Invalid Mesage: {:?}", resp),
         }
     }
+    pub fn show(&mut self) -> Result<()> {
+        self.unit_request(Request::Show)
+    }
+    pub fn hide(&mut self) -> Result<()> {
+        self.unit_request(Request::Hide)
+    }
 }
 
-enum BarEvent {
-    Request(Request),
-    Alarm,
-    Disconnected,
-    X11(x11rb::protocol::Event),
-}
+fn thread_main(
+    display: Option<String>,
+    request_rx: Receiver<Request>,
+    response_tx: Sender<Response>,
+) -> Result<()> {
+    let display = display.as_deref();
 
-/// Consume X11 events and redirect it to tx.
-fn thread_x11_event_consumer(tx: Sender<BarEvent>, conn: Arc<RustConnection>) {
-    spawn_named_thread("bar-x11".to_owned(), move || loop {
-        let event = conn.wait_for_event().expect("cannot get event");
-        tx.send(BarEvent::X11(event)).expect("rx has been closed");
-    });
-}
+    // Use a dedicated connection for this bar.
+    let (conn, _) =
+        RustConnection::connect(display).expect("cannot establish a connection to X server");
+    let conn = Arc::new(conn);
 
-/// Read a request from the receiver and redirect it to tx.
-fn thread_daily_request_redirector(tx: Sender<BarEvent>, rx: Receiver<Request>) {
-    spawn_named_thread("bar-request".to_owned(), move || loop {
-        let event = match rx.recv() {
-            Ok(req) => BarEvent::Request(req),
-            Err(err) => {
-                error!("cannot receive a request: {:?}", err);
-                BarEvent::Disconnected
-            }
-        };
-        tx.send(event).expect("rx has been closed");
-    });
-}
-
-/// Deliver a `BarEvent::Alarm` every 10 seconds.
-fn thread_timer(tx: Sender<BarEvent>) {
-    spawn_named_thread("bar-timer".to_owned(), move || loop {
-        std::thread::sleep(std::time::Duration::from_secs(10));
-        tx.send(BarEvent::Alarm).expect("rx has been closed");
-    });
-}
-
-/// Process `BarEvent`s
-fn thread_main(ctx: &Context, request_rx: Receiver<Request>, response_tx: Sender<Response>) {
-    let display = ctx.display.clone();
-    spawn_named_thread("bar-main".to_owned(), move || -> Result<()> {
-        let display = display.as_deref();
-        // Use a dedicated connection for this bar.
-        let (conn, _) =
-            RustConnection::connect(display).expect("cannot establish a connection to X server");
-        let conn = Arc::new(conn);
-
-        let (tx, rx) = channel::<BarEvent>();
-
-        // Spawn threads
-        thread_daily_request_redirector(tx.clone(), request_rx);
-        thread_timer(tx.clone());
-        thread_x11_event_consumer(tx, conn.clone());
-
-        let mut bar = Bar::new(conn)?;
-
-        while let Ok(event) = rx.recv() {
-            match event {
-                BarEvent::Request(cmd) => match cmd {
-                    Request::Configure { geometry } => {
-                        bar.configure(geometry)?;
-                        response_tx.send(Response::Success).unwrap();
-                    }
-                    Request::UpdateContent { content } => {
-                        bar.update_content(content)?;
-                        response_tx.send(Response::Success).unwrap();
-                    }
-                    Request::GetWindowId => {
-                        response_tx.send(Response::WindowId(bar.wid)).unwrap();
-                    }
-                    Request::Show => {
-                        bar.show()?;
-                        response_tx.send(Response::Success).unwrap();
-                    }
-                    Request::Hide => {
-                        bar.hide()?;
-                        response_tx.send(Response::Success).unwrap();
-                    }
-                },
-
-                BarEvent::Alarm => {
-                    bar.draw()?;
-                }
-
-                BarEvent::Disconnected => {
-                    break;
-                }
-
-                BarEvent::X11(event) => {
-                    bar.handle_event(event)?;
-                }
-            }
+    // Consume X11 events and redirect it
+    let (event_tx, event_rx) = unbounded();
+    spawn_named_thread("bar-x11".to_owned(), {
+        let conn = conn.clone();
+        move || loop {
+            let event = conn.wait_for_event().expect("cannot get event");
+            event_tx.send(event).expect("rx has been closed");
         }
-        info!("bar stop");
-        Ok(())
     });
+
+    // To update the bar periodically
+    let timer_rx = tick(std::time::Duration::from_secs(10));
+
+    let mut bar = Bar::new(conn)?;
+    // Dropping `bar` cause the "bar-x11" thread to be terminated.
+
+    loop {
+        select! {
+            recv(request_rx) -> req => {
+                let req = req.expect("request_tx was closed");
+                let resp = bar.handle_request(req);
+                response_tx.send(resp).expect("response_rx was closed");
+            }
+
+            recv(event_rx) -> event => {
+                let event = event.expect("event_rx was closed");
+                bar.handle_event(event)?;
+            }
+
+            recv(timer_rx) -> _ => bar.show()?,
+        }
+    }
 }
 
 struct Bar {
@@ -214,6 +158,13 @@ struct Bar {
     gc: Gcontext,
     mon: Rectangle,
     content: Content,
+}
+
+impl Drop for Bar {
+    fn drop(&mut self) {
+        let _ = self.conn.kill_client(self.wid);
+        let _ = self.conn.flush();
+    }
 }
 
 impl Bar {
@@ -249,6 +200,38 @@ impl Bar {
             },
             content: Content::default(),
         })
+    }
+
+    fn handle_request(&mut self, req: Request) -> Response {
+        match req {
+            Request::GetWindowId => Response::WindowId(self.wid),
+            Request::Configure { geometry } => self
+                .configure(geometry)
+                .map(|_| Response::Success)
+                .unwrap_or_else(|e| Response::Error {
+                    reason: e.to_string(),
+                }),
+            Request::UpdateContent { content } => self
+                .update_content(content)
+                .map(|_| Response::Success)
+                .unwrap_or_else(|e| Response::Error {
+                    reason: e.to_string(),
+                }),
+            Request::Show => {
+                self.show()
+                    .map(|_| Response::Success)
+                    .unwrap_or_else(|e| Response::Error {
+                        reason: e.to_string(),
+                    })
+            }
+            Request::Hide => {
+                self.hide()
+                    .map(|_| Response::Success)
+                    .unwrap_or_else(|e| Response::Error {
+                        reason: e.to_string(),
+                    })
+            }
+        }
     }
 
     fn configure(&mut self, mon: Rectangle) -> Result<()> {

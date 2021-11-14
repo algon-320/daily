@@ -62,48 +62,28 @@ where
     let mut wm = winman::WinMan::new(ctx.clone())?;
     debug!("WinMan initialized");
 
-    enum DailyEvent {
-        X11(x11rb::protocol::Event),
-        Error(x11rb::errors::ConnectionError),
-        Alarm,
-    }
-    let (event_tx, event_rx) = std::sync::mpsc::channel::<DailyEvent>();
-
-    // a thread to generate alarm events periodically.
-    {
-        use std::time::Duration;
-        const PERIOD: Duration = Duration::from_secs(10);
-
-        let event_tx = event_tx.clone();
-        spawn_named_thread("main-timer".to_owned(), move || loop {
-            std::thread::sleep(PERIOD);
-            let res = event_tx.send(DailyEvent::Alarm);
-            if res.is_err() {
-                return;
-            }
-        });
-    }
+    let (event_tx, event_rx) = crossbeam_channel::unbounded();
 
     // a thread to consume X11 events.
-    {
+    spawn_named_thread("main-x11".to_owned(), {
         let ctx = ctx.clone();
-        spawn_named_thread("main-x11".to_owned(), move || loop {
-            let daily_event = match ctx.conn.wait_for_event() {
-                Ok(ev) => DailyEvent::X11(ev),
-                Err(err) => DailyEvent::Error(err),
-            };
-            let res = event_tx.send(daily_event);
+        move || loop {
+            let event = ctx.conn.wait_for_event();
+            let res = event_tx.send(event);
             if res.is_err() {
                 return;
             }
-        });
-    }
+        }
+    });
+
+    let timer_rx = crossbeam_channel::tick(std::time::Duration::from_secs(10));
 
     // main thread: processes events gathered from the others.
-    while let Ok(ev) = event_rx.recv() {
-        match ev {
-            DailyEvent::X11(ev) => {
-                let res = wm.handle_event(ev);
+    loop {
+        crossbeam_channel::select! {
+            recv(event_rx) -> event => {
+                let event = event.expect("event_tx has been closed.")?;
+                let res = wm.handle_event(event);
 
                 // Ignore WINDOW errors ...
                 //     because WINDOW errors occur during processing a event
@@ -119,17 +99,12 @@ where
 
                 ctx.conn.flush()?;
             }
-            DailyEvent::Alarm => {
+            recv(timer_rx) -> _ => {
                 wm.alarm()?;
                 ctx.conn.flush()?;
             }
-            DailyEvent::Error(e) => {
-                return Err(e.into());
-            }
         }
     }
-
-    Ok(())
 }
 
 fn main() {
