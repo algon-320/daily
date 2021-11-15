@@ -96,6 +96,24 @@ impl Window {
         })
     }
 
+    pub fn net_wm_type(&self) -> Result<Option<Atom>> {
+        let net_wm_type = self.ctx.atom._NET_WM_WINDOW_TYPE;
+        let value = self
+            .ctx
+            .conn
+            .get_property(false, self.inner, net_wm_type, AtomEnum::ATOM, 0, 1)?
+            .reply()?
+            .value;
+        if value.len() < 4 {
+            return Ok(None);
+        }
+
+        Ok(value[..]
+            .try_into()
+            .map(|value: [u8; 4]| Atom::from_ne_bytes(value))
+            .ok())
+    }
+
     pub fn close(self) {
         if let Ok(void) = self.ctx.conn.destroy_window(self.inner) {
             let _ = void.check();
@@ -171,12 +189,15 @@ impl Window {
         self.ctx.focus_window(self.inner)
     }
 
-    pub fn float(&mut self, rect: Rectangle) -> Result<()> {
+    pub fn float(&mut self, mut rect: Rectangle) -> Result<()> {
         self.add_frame()?;
 
         // put this window at the top of window stack
         let aux = ConfigureWindowAux::new().stack_mode(StackMode::ABOVE);
         self.ctx.conn.configure_window(self.frame, &aux)?;
+
+        // add space for the frame
+        rect.height += 16; // FIXME
 
         self.float_geometry = Some(rect);
         Ok(())

@@ -162,6 +162,29 @@ impl Screen {
             win.hide()?;
         }
 
+        // Float the window if it is a dialog
+        let type_dialog = self.ctx.atom._NET_WM_WINDOW_TYPE_DIALOG;
+        if win.net_wm_type()? == Some(type_dialog) {
+            let geo = self.ctx.conn.get_geometry(win.frame())?.reply()?;
+
+            let x;
+            let y;
+            if let Some(mon) = self.monitor.as_ref() {
+                x = (mon.info.width / 2) as i16 - (geo.width / 2) as i16;
+                y = (mon.info.height / 2) as i16 - (geo.height / 2) as i16;
+            } else {
+                x = 0;
+                y = 0;
+            }
+
+            win.float(Rectangle {
+                x,
+                y,
+                width: geo.width,
+                height: geo.height,
+            })?;
+        }
+
         self.wins.insert(win.frame(), win);
         self.refresh_layout()?;
         Ok(())
