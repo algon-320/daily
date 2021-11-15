@@ -196,6 +196,7 @@ impl Window {
     }
 
     pub fn configure(&self, aux: &ConfigureWindowAux) -> Result<()> {
+        // Use self.border_width if border_width is not specified.
         let bw = aux.border_width.unwrap_or(self.border_width);
         let aux = aux.border_width(bw);
         self.ctx.conn.configure_window(self.frame, &aux)?;
@@ -227,10 +228,10 @@ impl Window {
         if self.frame_visible {
             return Ok(());
         }
-        self.frame_visible = true;
 
-        let aux = ConfigureWindowAux::new().border_width(self.border_width as u32);
-        self.configure(&aux)?; // configure the inner as well
+        self.frame_visible = true;
+        let aux = ConfigureWindowAux::new();
+        self.configure(&aux)?;
 
         self.update_ornament()?;
         Ok(())
@@ -240,9 +241,9 @@ impl Window {
         if !self.frame_visible {
             return Ok(());
         }
-        self.frame_visible = false;
 
-        let aux = ConfigureWindowAux::new().border_width(self.border_width as u32);
+        self.frame_visible = false;
+        let aux = ConfigureWindowAux::new();
         self.configure(&aux)?;
 
         self.update_ornament()?;
@@ -333,8 +334,8 @@ impl EventHandlerMethods for Window {
         }
 
         assert!(notif.window == self.inner);
-
         self.unmap()?;
+
         Ok(())
     }
 
