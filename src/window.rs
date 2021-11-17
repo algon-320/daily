@@ -108,10 +108,7 @@ impl Window {
             return Ok(None);
         }
 
-        Ok(value[..]
-            .try_into()
-            .map(|value: [u8; 4]| Atom::from_ne_bytes(value))
-            .ok())
+        Ok(value[..].try_into().map(Atom::from_ne_bytes).ok())
     }
 
     pub fn close(self) {
