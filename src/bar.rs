@@ -167,6 +167,32 @@ impl Drop for Bar {
     }
 }
 
+mod color {
+    pub use blue::*;
+
+    mod blue {
+        pub const MAIN: u32 = 0x4e4b61;
+        pub const LIGHT: u32 = 0x69656d;
+        pub const SHADOW: u32 = 0x1a1949;
+
+        pub const STRONG_CHAR1: u32 = 0x00f080;
+        pub const STRONG_CHAR2: u32 = 0x007840;
+        pub const NORMAL_CHAR1: u32 = 0xd2ca9c;
+        pub const NORMAL_CHAR2: u32 = 0x9d9784;
+    }
+
+    mod red {
+        pub const MAIN: u32 = 0xc45042;
+        pub const LIGHT: u32 = 0xf99b4d;
+        pub const SHADOW: u32 = 0x781922;
+
+        pub const STRONG_CHAR1: u32 = 0x76e435;
+        pub const STRONG_CHAR2: u32 = 0x6fb901;
+        pub const NORMAL_CHAR1: u32 = 0xffdd66;
+        pub const NORMAL_CHAR2: u32 = 0xb99c23;
+    }
+}
+
 impl Bar {
     fn new(conn: Arc<RustConnection>) -> Result<Self> {
         let root = conn.setup().roots[0].root;
@@ -176,14 +202,14 @@ impl Bar {
         let class = WindowClass::INPUT_OUTPUT;
         let visual = x11rb::COPY_FROM_PARENT;
         let aux = CreateWindowAux::new()
-            .background_pixel(0x4e4b61)
+            .background_pixel(0) // black
             .event_mask(EventMask::EXPOSURE)
             .override_redirect(1);
         conn.create_window(depth, wid, root, -1, -1, 1, 1, 0, class, visual, &aux)?;
         debug!("window={} created", wid);
 
         let gc = conn.generate_id()?;
-        let aux = CreateGCAux::new().background(0x4e4b61).foreground(0xd2ca9c);
+        let aux = CreateGCAux::new();
         conn.create_gc(gc, wid, &aux)?;
 
         conn.flush()?;
@@ -275,10 +301,22 @@ impl Bar {
         let bar = self.wid;
         let gc = self.gc;
 
-        let color_bg = 0x4e4b61;
+        let color_bg = color::MAIN;
+
+        // Clear background
+        let aux = ChangeGCAux::new().foreground(color_bg).background(color_bg);
+        self.conn.change_gc(gc, &aux)?;
+
+        let rect = Rectangle {
+            x: 0,
+            y: 0,
+            width: w as u16,
+            height: 16, // FIXME
+        };
+        self.conn.poly_fill_rectangle(bar, gc, &[rect])?;
 
         // Lines
-        let aux = ChangeGCAux::new().foreground(0x69656d);
+        let aux = ChangeGCAux::new().foreground(color::LIGHT);
         self.conn.change_gc(gc, &aux)?;
 
         let p1 = Point { x: 0, y: 14 };
@@ -287,7 +325,7 @@ impl Bar {
         self.conn
             .poly_line(CoordMode::ORIGIN, bar, gc, &[p1, p2, p3])?;
 
-        let aux = ChangeGCAux::new().foreground(0x1a1949);
+        let aux = ChangeGCAux::new().foreground(color::SHADOW);
         self.conn.change_gc(gc, &aux)?;
 
         let p1 = Point { x: 1, y: 15 };
@@ -304,11 +342,11 @@ impl Bar {
             let color1;
             let color2;
             if i == cont.current_screen {
-                color1 = 0x00f080;
-                color2 = 0x007840;
+                color1 = color::STRONG_CHAR1;
+                color2 = color::STRONG_CHAR2;
             } else {
-                color1 = 0xd2ca9c;
-                color2 = 0x9d9784;
+                color1 = color::NORMAL_CHAR1;
+                color2 = color::NORMAL_CHAR2;
             }
 
             let x = offset_x + (i * 12) as i16;
@@ -319,24 +357,13 @@ impl Bar {
 
         // clock
         use chrono::prelude::*;
-        let mut x = w - 136;
-        let y = 5;
-
-        let aux = ChangeGCAux::new().foreground(color_bg).background(color_bg);
-        self.conn.change_gc(gc, &aux)?;
-
-        let rect = Rectangle {
-            x,
-            y,
-            width: (6 + 2) * 16,
-            height: 6,
-        };
-        self.conn.poly_fill_rectangle(bar, gc, &[rect])?;
-
-        let (color1, color2) = (0xd2ca9c, 0x9d9784);
+        let (color1, color2) = (color::NORMAL_CHAR1, color::NORMAL_CHAR2);
         let now = chrono::Local::now();
         let date = now.date();
         let time = now.time();
+
+        let mut x = w - 136;
+        let y = 5;
 
         let date_time = format!(
             "{:04}/{:02}/{:02} {:02}:{:02}",
