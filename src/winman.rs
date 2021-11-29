@@ -534,12 +534,14 @@ impl EventHandlerMethods for WinMan {
             let rel_y = geo.y - mon_y;
 
             let win = screen.window_mut(wid).unwrap();
-            win.float(Rectangle {
-                x: rel_x,
-                y: rel_y,
-                width: geo.width,
-                height: geo.height,
-            })?;
+            if !win.is_floating() {
+                win.float(Rectangle {
+                    x: rel_x,
+                    y: rel_y,
+                    width: geo.width,
+                    height: geo.height,
+                })?;
+            }
 
             self.drag = Some(MouseDrag {
                 wid,
