@@ -10,11 +10,12 @@ use crate::window::Window;
 #[derive(Debug)]
 pub struct Horizontal {
     ctx: Context,
+    ratio: u16,
 }
 
 impl Horizontal {
     pub fn new(ctx: Context) -> Self {
-        Self { ctx }
+        Self { ctx, ratio: 50 }
     }
 }
 
@@ -33,17 +34,37 @@ impl Layout for Horizontal {
             return Ok(());
         }
 
-        let count = windows.len();
-        let w = (mon.width / count as u16) as u32;
-        let h = mon.height as u32;
         let offset_x = mon.x as i32;
         let offset_y = mon.y as i32;
+        let h = mon.height as u32;
+
+        let border_conf = self.ctx.config.border;
+        let border_width = if border_visible { border_conf.width } else { 0 };
+
+        let main_w;
+        let w;
+        if windows.len() > 1 {
+            main_w = mon.width as u32 * self.ratio as u32 / 100;
+            w = (mon.width as u32 - main_w) / (windows.len() as u32 - 1);
+        } else {
+            main_w = mon.width as u32;
+            w = 0;
+        }
         let mut x = 0;
 
-        for win in windows.iter() {
-            let border_conf = self.ctx.config.border;
-            let border_width = if border_visible { border_conf.width } else { 0 };
+        // main area
+        {
+            let conf = ConfigureWindowAux::new()
+                .x(offset_x + x)
+                .y(offset_y)
+                .border_width(border_width)
+                .width(main_w - border_width * 2)
+                .height(h - border_width * 2);
+            windows[0].configure(&conf)?;
+            x += main_w as i32;
+        }
 
+        for win in windows[1..].iter() {
             let conf = ConfigureWindowAux::new()
                 .x(offset_x + x)
                 .y(offset_y)
@@ -51,10 +72,28 @@ impl Layout for Horizontal {
                 .width(w - border_width * 2)
                 .height(h - border_width * 2);
             win.configure(&conf)?;
-
             x += w as i32;
         }
 
+        Ok(())
+    }
+
+    fn process_command(&mut self, cmd: String) -> Result<()> {
+        match cmd.as_str() {
+            "+" => {
+                if self.ratio < 95 {
+                    self.ratio += 5;
+                }
+            }
+
+            "-" => {
+                if self.ratio > 5 {
+                    self.ratio -= 5;
+                }
+            }
+
+            _ => {}
+        }
         Ok(())
     }
 }
@@ -79,5 +118,9 @@ impl Layout for HorizontalWithBorder {
 
     fn layout(&mut self, mon: &MonitorInfo, windows: &[&mut Window], _: bool) -> Result<()> {
         self.base.layout(mon, windows, true)
+    }
+
+    fn process_command(&mut self, cmd: String) -> Result<()> {
+        self.base.process_command(cmd)
     }
 }

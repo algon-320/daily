@@ -15,8 +15,10 @@ use std::convert::TryInto;
 //      P = 33,
 //      Enter = 36,
 //      S = 39,
+//      H = 43,
 //      J = 44,
 //      K = 45,
+//      L = 46,
 //      C = 54,
 //      Space = 65,
 //      SuperL = 133,
@@ -50,6 +52,9 @@ keybind:
 
     - { action: Press,   mod: [],             key: 133, command: ShowBorder }
     - { action: Release, mod: [Super],        key: 133, command: HideBorder }
+
+    - { action: Press,   mod: [Super],        key: 43,  command: {LayoutCommand: "-"} }
+    - { action: Press,   mod: [Super],        key: 46,  command: {LayoutCommand: "+"} }
 
     - { action: Press,   mod: [Super],        key: 10,  command: {Screen: 0} }
     - { action: Press,   mod: [Super],        key: 11,  command: {Screen: 1} }

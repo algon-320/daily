@@ -20,6 +20,9 @@ keybind:
     - { action: Press,   mod: [],             key: 133, command: ShowBorder }
     - { action: Release, mod: [Super],        key: 133, command: HideBorder }
 
+    - { action: Press,   mod: [Super],        key: 43,  command: {LayoutCommand: "-"} }
+    - { action: Press,   mod: [Super],        key: 46,  command: {LayoutCommand: "+"} }
+
     - { action: Press,   mod: [Super],        key: 10,  command: {Screen: 0} }
     - { action: Press,   mod: [Super],        key: 11,  command: {Screen: 1} }
     - { action: Press,   mod: [Super],        key: 12,  command: {Screen: 2} }
