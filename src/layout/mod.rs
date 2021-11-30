@@ -20,4 +20,8 @@ pub trait Layout {
     ) -> Result<()>;
 
     fn name(&self) -> &'static str;
+
+    fn process_command(&mut self, _cmd: String) -> Result<()> {
+        Ok(())
+    }
 }

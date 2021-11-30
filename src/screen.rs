@@ -354,6 +354,13 @@ impl Screen {
     pub fn alarm(&mut self) -> Result<()> {
         Ok(())
     }
+
+    pub fn layout_command(&mut self, cmd: String) -> Result<()> {
+        let layout = self.layouts.front_mut().expect("no layout");
+        layout.process_command(cmd)?;
+        self.refresh_layout()?;
+        Ok(())
+    }
 }
 
 impl EventHandlerMethods for Screen {

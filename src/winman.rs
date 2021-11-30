@@ -458,6 +458,10 @@ impl WinMan {
             Command::MovePointerRel(dx, dy) => move_pointer(&self.ctx.conn, dx, dy)?,
             Command::MouseClickLeft => simulate_click(&self.ctx.conn, 1, 10)?, // left, 10ms
             Command::Spawn(cmd) => spawn_process(&cmd)?,
+
+            Command::LayoutCommand(cmd) => {
+                self.focused_screen_mut()?.layout_command(cmd)?;
+            }
         }
         Ok(())
     }

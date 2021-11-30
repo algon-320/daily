@@ -46,6 +46,7 @@ pub enum Command {
     MoveToScreen(usize),
     MovePointerRel(i16, i16), // (dx, dy)
     MouseClickLeft,
+    LayoutCommand(String),
 }
 
 use error::{Error, Result};
