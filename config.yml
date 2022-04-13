@@ -4,6 +4,11 @@ border:
     color_focused: '#00f080'
     color_regular: '#00003e'
 
+# the number of screens
+# NOTE: currently this number should be less than 10
+#       because of the limitation of bar implementation.
+screens: 5
+
 keybind:
     - { action: Press,   mod: [Super],        key: 33,  command: {Spawn: /usr/bin/dmenu_run} }
     - { action: Press,   mod: [Super],        key: 28,  command: {Spawn: /usr/bin/xterm} }

@@ -36,6 +36,7 @@ border:
     width: 1
     color_focused: '#00f080'
     color_regular: '#00003e'
+screens: 5
 
 keybind:
     - { action: Press,   mod: [Super],        key: 33,  command: {Spawn: /usr/bin/dmenu_run} }
@@ -129,6 +130,7 @@ mod parse {
         keybind: Vec<KeyBind>,
         border: BorderConfig,
         background_color: String,
+        screens: usize,
     }
 
     fn parse_color(hex: &str) -> Result<u32> {
@@ -167,6 +169,7 @@ mod parse {
                 keybind,
                 border: yaml_repr.border.try_into()?,
                 background_color,
+                screens: yaml_repr.screens,
             })
         }
     }
@@ -184,6 +187,7 @@ pub struct Config {
     pub keybind: HashMap<(KeybindAction, u16, u8), Command>,
     pub border: BorderConfig,
     pub background_color: u32,
+    pub screens: usize,
 }
 
 impl Config {

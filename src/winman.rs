@@ -86,8 +86,6 @@ fn simulate_click<C: Connection>(conn: &C, button: u8, duration_ms: u32) -> Resu
     Ok(())
 }
 
-const MAX_SCREENS: usize = 10;
-
 #[derive(Debug, Clone)]
 struct MouseDrag {
     wid: Wid,
@@ -235,7 +233,7 @@ impl WinMan {
         }
 
         // Fill self.screens
-        let max_num = std::cmp::max(self.monitor_num, MAX_SCREENS);
+        let max_num = std::cmp::max(self.monitor_num, self.ctx.config.screens);
         while self.screens.len() < max_num {
             let id = self.screens.len();
             let screen = Screen::new(self.ctx.clone(), id)?;

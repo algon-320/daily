@@ -351,7 +351,7 @@ impl Bar {
 
             let x = offset_x + (i * 12) as i16;
             let y = offset_y;
-            let digit = b'1' + (i as u8);
+            let digit = b'1' + (i as u8); // draw digit in 1-indexed
             draw_digit(&*self.conn, bar, gc, x, y, digit, color1, color2)?;
         }
 

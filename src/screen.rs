@@ -130,7 +130,7 @@ impl Screen {
             .expect("TODO: bar.configure");
         mon.bar
             .update_content(Content {
-                max_screen: 5,
+                max_screen: self.ctx.config.screens,
                 current_screen: self.id,
             })
             .expect("TODO: bar.update_content");
