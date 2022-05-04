@@ -89,7 +89,6 @@ fn simulate_click<C: Connection>(conn: &C, button: u8, duration_ms: u32) -> Resu
 #[derive(Debug, Clone)]
 struct MouseDrag {
     wid: Wid,
-    state: u16,
     start_x: i16,
     start_y: i16,
     window_x: i16,
@@ -547,7 +546,6 @@ impl EventHandlerMethods for WinMan {
 
             self.drag = Some(MouseDrag {
                 wid,
-                state: e.state,
                 start_x: e.root_x,
                 start_y: e.root_y,
                 window_x: geo.x,
