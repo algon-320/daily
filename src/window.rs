@@ -6,6 +6,27 @@ use crate::context::Context;
 use crate::error::Result;
 use crate::event::EventHandlerMethods;
 
+fn get_wm_protocols(ctx: &Context, wid: Wid) -> Result<Vec<Atom>> {
+    // NOTE: https://www.x.org/releases/X11R7.7/doc/xorg-docs/icccm/icccm.html#WM_PROTOCOLS_Property
+
+    let wm_protocols = ctx.atom.WM_PROTOCOLS;
+    let res = ctx
+        .conn
+        .get_property(false, wid, wm_protocols, AtomEnum::ATOM, 0, std::u32::MAX)?
+        .reply()?;
+
+    if res.type_ == x11rb::NONE || res.value.len() % 4 != 0 {
+        return Ok(Vec::new());
+    }
+
+    let protocols = res
+        .value32()
+        .map(|iter| iter.collect())
+        .unwrap_or_else(|| Vec::new());
+
+    Ok(protocols)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum WindowState {
     Created,
@@ -25,11 +46,31 @@ pub struct Window {
     highlighted: bool,
     border_width: u32,
     gc: Gcontext,
+    is_wm_delete_compliant: bool,
 }
 
 impl Window {
     pub fn new(ctx: Context, inner: Wid, state: WindowState, border_width: u32) -> Result<Self> {
         use x11rb::connection::Connection as _;
+
+        let mut is_wm_delete_compliant = false;
+
+        // Examine WM_PROTOCOLS
+        {
+            let wm_protocols = get_wm_protocols(&ctx, inner)?;
+
+            debug!("WM_PROTOCOLS of {:08X}: {:?}", inner, wm_protocols);
+            for proto in wm_protocols {
+                let name_bytes = ctx.conn.get_atom_name(proto)?.reply()?.name;
+                let name =
+                    String::from_utf8(name_bytes).unwrap_or_else(|e| format!("{:?}", e.as_bytes()));
+                debug!("WM_PROTOCOLS: {}", name);
+
+                if proto == ctx.atom.WM_DELETE_WINDOW {
+                    is_wm_delete_compliant = true;
+                }
+            }
+        }
 
         // Reparent
         let geo = ctx.conn.get_geometry(inner)?.reply()?;
@@ -93,6 +134,7 @@ impl Window {
             highlighted: false,
             border_width,
             gc,
+            is_wm_delete_compliant,
         })
     }
 
@@ -111,10 +153,21 @@ impl Window {
         Ok(value[..].try_into().map(Atom::from_ne_bytes).ok())
     }
 
-    pub fn close(self) {
-        if let Ok(void) = self.ctx.conn.destroy_window(self.inner) {
-            let _ = void.check();
+    pub fn close(self) -> Result<()> {
+        if self.is_wm_delete_compliant {
+            debug!("send WM_DELETE_WINDOW to {:08X}", self.inner);
+
+            // NOTE: https://www.x.org/releases/X11R7.7/doc/xorg-docs/icccm/icccm.html#ClientMessage_Events
+            let wm_protocols = self.ctx.atom.WM_PROTOCOLS;
+            let wm_delete_window = self.ctx.atom.WM_DELETE_WINDOW;
+            let data = ClientMessageData::from([wm_delete_window, x11rb::CURRENT_TIME, 0, 0, 0]);
+            let event = ClientMessageEvent::new(32, self.inner, wm_protocols, data);
+            self.ctx.conn.send_event(false, self.inner, 0_u32, event)?;
+        } else {
+            debug!("destroy window {:08X}", self.inner);
+            self.ctx.conn.destroy_window(self.inner)?.check()?;
         }
+        Ok(())
     }
 
     pub fn is_mapped(&self) -> bool {
