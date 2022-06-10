@@ -195,19 +195,6 @@ impl Config {
         use ::config::{File, FileFormat};
         use std::{env, path::PathBuf};
 
-        let mut conf = ::config::Config::new();
-
-        // Default
-        conf.merge(File::from_str(DEFAULT_CONFIG, FileFormat::Yaml).required(true))
-            .expect("ill-formed DEFAULT_CONFIG");
-
-        // config.yml localted on the current working directory.
-        conf.merge(File::new("config.yml", FileFormat::Yaml).required(false))
-            .map_err(|e| Error::InvalidConfig {
-                reason: e.to_string(),
-            })?;
-
-        // config.yml localted on the xdg user config directory.
         let mut xdg_config = env::var_os("XDG_CONFIG_HOME")
             .map(PathBuf::from)
             .unwrap_or_else(|| {
@@ -218,20 +205,27 @@ impl Config {
             });
         xdg_config.push("daily");
         xdg_config.push("config.yml");
-        conf.merge(
-            File::new(
-                xdg_config.to_str().expect("not UTF-8 path"),
-                FileFormat::Yaml,
-            )
-            .required(false),
-        )
-        .map_err(|e| Error::InvalidConfig {
-            reason: e.to_string(),
-        })?;
 
-        // Generate config
+        let config = ::config::Config::builder()
+            // Default
+            .add_source(File::from_str(DEFAULT_CONFIG, FileFormat::Yaml).required(true))
+            // config.yml can be localted on the current working directory.
+            .add_source(File::new("config.yml", FileFormat::Yaml).required(false))
+            // config.yml can be localted on the XDG user config directory.
+            .add_source(
+                File::new(
+                    xdg_config.to_str().expect("not UTF-8 path"),
+                    FileFormat::Yaml,
+                )
+                .required(false),
+            )
+            .build()
+            .map_err(|e| Error::InvalidConfig {
+                reason: e.to_string(),
+            })?;
+
         let yaml_repr: parse::ConfigYamlRepr =
-            conf.try_into().map_err(|e| Error::InvalidConfig {
+            config.try_deserialize().map_err(|e| Error::InvalidConfig {
                 reason: e.to_string(),
             })?;
         yaml_repr.try_into()
@@ -253,11 +247,12 @@ impl Default for Config {
         info!("default config is used");
 
         use ::config::{File, FileFormat};
-        let mut conf = ::config::Config::new();
-        conf.merge(File::from_str(DEFAULT_CONFIG, FileFormat::Yaml).required(true))
+        let config = ::config::Config::builder()
+            .add_source(File::from_str(DEFAULT_CONFIG, FileFormat::Yaml).required(true))
+            .build()
             .expect("ill-formed DEFAULT_CONFIG");
 
-        let yaml_repr: parse::ConfigYamlRepr = conf.try_into().unwrap();
+        let yaml_repr: parse::ConfigYamlRepr = config.try_deserialize().unwrap();
         yaml_repr.try_into().expect("ill-formed DEFAULT_CONFIG")
     }
 }
