@@ -103,6 +103,7 @@ pub struct WinMan {
     screens: Vec<Screen>,
     monitor_num: usize,
     drag: Option<MouseDrag>,
+    last_focused_screen: usize,
 }
 
 impl WinMan {
@@ -112,6 +113,7 @@ impl WinMan {
             screens: Vec::new(),
             monitor_num: 0,
             drag: None,
+            last_focused_screen: 0,
         };
         wm.init()?;
         Ok(wm)
@@ -339,6 +341,7 @@ impl WinMan {
         }
 
         self.focus_changed()?;
+        self.last_focused_screen = id;
         Ok(())
     }
 
@@ -372,6 +375,7 @@ impl WinMan {
     fn focus_monitor(&mut self, mon_id: usize) -> Result<()> {
         let screen = self.screen_mut_by_mon(mon_id);
         screen.focus_any()?;
+        self.last_focused_screen = screen.id;
         self.focus_changed()?;
         Ok(())
     }
@@ -704,9 +708,13 @@ impl EventHandlerMethods for WinMan {
             && (focus_in.detail == NotifyDetail::POINTER_ROOT
                 || focus_in.detail == NotifyDetail::NONE)
         {
-            // Focus the first monitor
-            let screen = self.screen_mut_by_mon(0);
-            screen.focus_any()?;
+            // Focus the last focused monitor
+            let last_focused = self.last_focused_screen;
+            if let Some(screen) = self.find_screen_mut(|sc| sc.id == last_focused) {
+                screen.focus_any()?;
+            } else {
+                self.screen_mut_by_mon(0).focus_any()?;
+            }
         }
         Ok(())
     }
