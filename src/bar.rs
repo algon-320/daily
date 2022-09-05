@@ -33,6 +33,7 @@ pub enum Response {
 pub struct Content {
     pub max_screen: usize,
     pub current_screen: usize,
+    pub focused: bool,
 }
 
 #[derive(Debug)]
@@ -168,29 +169,16 @@ impl Drop for Bar {
 }
 
 mod color {
-    pub use blue::*;
+    pub const MAIN: u32 = 0x4e4b61;
+    pub const LIGHT: u32 = 0x69656d;
+    pub const SHADOW: u32 = 0x1a1949;
 
-    mod blue {
-        pub const MAIN: u32 = 0x4e4b61;
-        pub const LIGHT: u32 = 0x69656d;
-        pub const SHADOW: u32 = 0x1a1949;
-
-        pub const STRONG_CHAR1: u32 = 0x00f080;
-        pub const STRONG_CHAR2: u32 = 0x007840;
-        pub const NORMAL_CHAR1: u32 = 0xd2ca9c;
-        pub const NORMAL_CHAR2: u32 = 0x9d9784;
-    }
-
-    mod red {
-        pub const MAIN: u32 = 0xc45042;
-        pub const LIGHT: u32 = 0xf99b4d;
-        pub const SHADOW: u32 = 0x781922;
-
-        pub const STRONG_CHAR1: u32 = 0x76e435;
-        pub const STRONG_CHAR2: u32 = 0x6fb901;
-        pub const NORMAL_CHAR1: u32 = 0xffdd66;
-        pub const NORMAL_CHAR2: u32 = 0xb99c23;
-    }
+    pub const FOCUSED_CHAR1: u32 = 0xdf5b4e;
+    pub const FOCUSED_CHAR2: u32 = 0xb35349;
+    pub const STRONG_CHAR1: u32 = 0x00f080;
+    pub const STRONG_CHAR2: u32 = 0x007840;
+    pub const NORMAL_CHAR1: u32 = 0xd2ca9c;
+    pub const NORMAL_CHAR2: u32 = 0x9d9784;
 }
 
 impl Bar {
@@ -342,8 +330,13 @@ impl Bar {
             let color1;
             let color2;
             if i == cont.current_screen {
-                color1 = color::STRONG_CHAR1;
-                color2 = color::STRONG_CHAR2;
+                if cont.focused {
+                    color1 = color::FOCUSED_CHAR1;
+                    color2 = color::FOCUSED_CHAR2;
+                } else {
+                    color1 = color::STRONG_CHAR1;
+                    color2 = color::STRONG_CHAR2;
+                }
             } else {
                 color1 = color::NORMAL_CHAR1;
                 color2 = color::NORMAL_CHAR2;

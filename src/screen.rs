@@ -123,6 +123,12 @@ impl Screen {
     }
 
     fn update(&mut self) -> Result<()> {
+        let focused_window = self
+            .ctx
+            .get_focused_window()?
+            .unwrap_or_else(|| InputFocus::NONE.into());
+        let focused = self.contains(focused_window);
+
         // update the bar
         let mon = self.monitor.as_mut().expect("monitor is not attached");
         mon.bar
@@ -132,6 +138,7 @@ impl Screen {
             .update_content(Content {
                 max_screen: self.ctx.config.screens,
                 current_screen: self.id,
+                focused,
             })
             .expect("TODO: bar.update_content");
 
@@ -281,6 +288,8 @@ impl Screen {
             }
         }
 
+        self.update()?;
+
         Ok(())
     }
 
@@ -305,13 +314,15 @@ impl Screen {
     pub fn focus_any(&mut self) -> Result<()> {
         debug!("screen {}: focus_any", self.id);
         match self.wins.values_mut().find(|win| win.is_mapped()) {
-            Some(first) => first.focus(),
+            Some(first) => {
+                first.focus()?;
+            }
             None => {
                 debug!("screen {}: focus background", self.id);
                 self.background.focus()?;
-                Ok(())
             }
         }
+        Ok(())
     }
 
     pub fn focus_next(&mut self) -> Result<()> {
