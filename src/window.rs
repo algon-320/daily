@@ -223,7 +223,9 @@ impl Window {
     pub fn show(&mut self) -> Result<()> {
         assert!(self.hidden);
         self.hidden = false;
-        self.ctx.conn.map_window(self.frame)?;
+        if self.state == WindowState::Mapped {
+            self.ctx.conn.map_window(self.frame)?;
+        }
         Ok(())
     }
 
