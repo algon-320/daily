@@ -26,7 +26,7 @@ impl Layout for Vertical {
     fn layout(
         &mut self,
         mon: &MonitorInfo,
-        windows: &[&mut Window],
+        windows: &mut [&mut Window],
         border_visible: bool,
     ) -> Result<()> {
         if windows.is_empty() {
@@ -40,7 +40,7 @@ impl Layout for Vertical {
         let offset_y = mon.y as i32;
         let mut y = 0;
 
-        for win in windows.iter() {
+        for win in windows.iter_mut() {
             let border_conf = self.ctx.config.border;
             let border_width = if border_visible { border_conf.width } else { 0 };
 
@@ -76,7 +76,7 @@ impl Layout for VerticalWithBorder {
         "vertical-with-border"
     }
 
-    fn layout(&mut self, mon: &MonitorInfo, windows: &[&mut Window], _: bool) -> Result<()> {
+    fn layout(&mut self, mon: &MonitorInfo, windows: &mut [&mut Window], _: bool) -> Result<()> {
         self.base.layout(mon, windows, true)
     }
 }

@@ -27,7 +27,7 @@ impl Layout for Horizontal {
     fn layout(
         &mut self,
         mon: &MonitorInfo,
-        windows: &[&mut Window],
+        windows: &mut [&mut Window],
         border_visible: bool,
     ) -> Result<()> {
         if windows.is_empty() {
@@ -64,7 +64,7 @@ impl Layout for Horizontal {
             x += main_w as i32;
         }
 
-        for win in windows[1..].iter() {
+        for win in windows[1..].iter_mut() {
             let conf = ConfigureWindowAux::new()
                 .x(offset_x + x)
                 .y(offset_y)
@@ -116,7 +116,7 @@ impl Layout for HorizontalWithBorder {
         "horizontal-with-border"
     }
 
-    fn layout(&mut self, mon: &MonitorInfo, windows: &[&mut Window], _: bool) -> Result<()> {
+    fn layout(&mut self, mon: &MonitorInfo, windows: &mut [&mut Window], _: bool) -> Result<()> {
         self.base.layout(mon, windows, true)
     }
 

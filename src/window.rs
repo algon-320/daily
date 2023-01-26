@@ -268,11 +268,22 @@ impl Window {
         Ok(())
     }
 
-    pub fn configure(&self, aux: &ConfigureWindowAux) -> Result<()> {
+    pub fn configure(&mut self, aux: &ConfigureWindowAux) -> Result<()> {
         // Use self.border_width if border_width is not specified.
         let bw = aux.border_width.unwrap_or(self.border_width);
         let aux = aux.border_width(bw);
         self.ctx.conn.configure_window(self.frame, &aux)?;
+
+        if self.is_floating() {
+            let mut outer_rect = self.float_geometry.unwrap();
+            if let Some(width) = aux.width {
+                outer_rect.width = width as u16;
+            }
+            if let Some(height) = aux.height {
+                outer_rect.height = height as u16;
+            }
+            self.float_geometry = Some(outer_rect);
+        }
 
         // dummy request
         // Ensure delivery of ConfigureNotify at the following `configure_window`
@@ -417,6 +428,15 @@ impl EventHandlerMethods for Window {
         if self.is_viewable() {
             self.draw_frame()?;
         }
+        Ok(())
+    }
+
+    fn on_configure_request(&mut self, req: ConfigureRequestEvent) -> Result<()> {
+        let mut aux = ConfigureWindowAux::from_configure_request(&req);
+        if let Some(height) = aux.height {
+            aux.height = Some(height + 16); // FIXME
+        }
+        self.configure(&aux)?;
         Ok(())
     }
 }

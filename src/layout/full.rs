@@ -26,7 +26,7 @@ impl Layout for FullScreen {
     fn layout(
         &mut self,
         mon: &MonitorInfo,
-        windows: &[&mut Window],
+        windows: &mut [&mut Window],
         _border_visible: bool,
     ) -> Result<()> {
         if windows.is_empty() {
@@ -50,7 +50,7 @@ impl Layout for FullScreen {
             .get_focused_window()?
             .unwrap_or_else(|| InputFocus::NONE.into());
 
-        for win in windows.iter() {
+        for win in windows.iter_mut() {
             let conf = if win.contains(focus) {
                 base_conf.stack_mode(StackMode::ABOVE) // Top-most
             } else {

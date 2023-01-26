@@ -251,14 +251,14 @@ impl Screen {
                 mon_info.height -= 16;
             }
 
-            layout.layout(&mon_info, &wins, self.border_visible)?;
+            layout.layout(&mon_info, &mut wins, self.border_visible)?;
         }
 
         // for floating windows
         {
             for win in self
                 .wins
-                .values()
+                .values_mut()
                 .filter(|win| win.is_mapped() && win.is_floating())
             {
                 let geo = win.get_float_geometry().unwrap();
